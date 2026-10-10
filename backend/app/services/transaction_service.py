@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from app.models import IdempotencyRecord, Transaction
+from app.models import GraphSyncJob, IdempotencyRecord, Transaction
 from app.schemas.transaction import TransactionCreate
 
 
@@ -29,6 +29,8 @@ def create_transaction(db: Session, data: TransactionCreate, key: str | None) ->
     try:
         # Insert the parent first, without committing either record yet.
         db.flush()
+        # The outbox job commits with its parent and any idempotency record.
+        db.add(GraphSyncJob(transaction_id=data.transaction_id))
         if key is not None:
             db.add(IdempotencyRecord(idempotency_key=key, request_hash=request_hash,
                                      transaction_id=data.transaction_id, status="COMPLETED"))

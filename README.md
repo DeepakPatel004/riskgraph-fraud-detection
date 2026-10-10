@@ -157,3 +157,16 @@ client. It is not activated by the API. No AWS resources, credentials, or networ
 access are needed for the tests. See [the Neptune adapter guide](docs/neptune-adapter.md)
 for request encoding, explicit construction, optional IAM dependency, and the
 integration checks that still require a real Neptune Database.
+
+## Transactional graph outbox
+
+Transaction creation now commits one `GraphSyncJob` with the transaction and its
+optional idempotency record. Graph writes run separately through an explicitly
+started worker. Existing API field names and endpoints are preserved.
+
+For an existing database, stop the API/workers, make a database backup, and run
+`python -m scripts.migrate_graph_sync_leases` from `backend/`. Fresh installations
+using `python -m scripts.init_db` already include the new nullable lease column.
+
+See [the graph sync guide](docs/graph-sync.md) for worker commands, retry policy,
+lease recovery, manual retries, and important in-memory/production limitations.

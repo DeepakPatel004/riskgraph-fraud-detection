@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+from typing import Literal
 
 
 class Settings(BaseSettings):
@@ -12,6 +13,14 @@ class Settings(BaseSettings):
     neptune_timeout: float = Field(default=10, gt=0, allow_inf_nan=False)
     neptune_iam_auth_enabled: bool = True
     neptune_region: str | None = None
+    graph_sync_adapter: Literal["disabled", "memory", "neptune"] = "disabled"
+    graph_sync_initial_delay: float = Field(default=5, gt=0, allow_inf_nan=False)
+    graph_sync_backoff_factor: float = Field(default=2, ge=1, allow_inf_nan=False)
+    graph_sync_max_delay: float = Field(default=300, gt=0, allow_inf_nan=False)
+    graph_sync_max_attempts: int = Field(default=5, ge=1)
+    graph_sync_lease_seconds: float = Field(default=300, gt=0, allow_inf_nan=False)
+    graph_sync_poll_interval: float = Field(default=1, gt=0, allow_inf_nan=False)
+    graph_sync_batch_size: int = Field(default=20, ge=1)
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

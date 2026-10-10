@@ -61,4 +61,5 @@ class GraphSyncJob(Base):
     status: Mapped[str] = mapped_column(String(16), default="PENDING", nullable=False)
     next_attempt_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, nullable=False)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
     __table_args__ = (Index("ix_graph_sync_status_due", "status", "next_attempt_at"),)
