@@ -1,0 +1,60 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+secrets.*
+credentials.*
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+
+# Python environments and generated files
+.venv/
+venv/
+env/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# Local databases and SQLite sidecar files
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+
+# Editor and operating-system temporary files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Generated ML artifacts and local datasets (app/models source stays trackable)
+artifacts/
+datasets/
+data/
+*.pkl
+*.pickle
+*.joblib
+*.onnx
+*.pt
+*.pth
+*.h5
+*.hdf5
+*.ubj
+*.model
+*.parquet
+*.arrow
+*.npy
+*.npz
+*.csv
+*.tsv
