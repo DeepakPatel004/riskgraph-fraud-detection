@@ -115,3 +115,37 @@ by older code cannot be recovered automatically. Previously saved idempotency
 hashes are not rewritten; an old hash based on a non-UTC timestamp representation
 may conflict on retry after normalization. The local database was inspected and
 contained no rows at the time of this change.
+
+## Local graph abstraction
+
+`app/graph/repository.py` defines the synchronous `GraphRepository` Protocol.
+`InMemoryGraphRepository` is a local implementation for learning and tests; it
+is not wired into the transaction API and does not connect to AWS. A future
+Neptune adapter can implement the same three methods without changing callers.
+
+Pass a `TransactionNode` containing the transaction ID, Decimal amount, currency,
+aware event time, pseudonymous card token, and optional device token. Never pass
+raw card numbers. The graph contains directed `USES_CARD` and `USES_DEVICE`
+relationships from transactions to token nodes. Repeated upserts replace the
+transaction by ID and keep edges unique; changed tokens replace old edges.
+
+`get_transaction_network(id, limit=50)` follows edges in both directions using
+breadth-first traversal, including indirect connections. The positive integer
+limit counts all returned nodes, including the root. Results are deterministic,
+contain only edges whose endpoints are returned, and are empty for unknown IDs.
+This investigation view has no historical time filter and must not be used as
+input to historical feature calculation.
+
+`get_historical_features(card_token, device_token, event_time)` uses elapsed UTC
+windows `[event_time - window, event_time)`: lower bounds are inclusive; exact-time
+and future events are excluded. It returns card/device transaction counts for
+24 hours, distinct card/device associations for 7 days, and the card's 7-day
+average amount using Decimal without rounding to cents. Absent devices are not
+counted as unique devices. Missing histories return zero; an absent device gives
+zero device features. Mixed currencies in a card's 7-day history raise ValueError
+because no currency conversion or currency parameter is available. Graph input
+contains no fraud labels or model predictions.
+
+The in-memory adapter scans local data and loses it on restart. It is intended
+for small datasets and serialized use, not concurrent writers or production
+storage. No database schema changes or additional dependencies are required.
