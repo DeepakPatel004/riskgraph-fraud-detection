@@ -149,3 +149,11 @@ contains no fraud labels or model predictions.
 The in-memory adapter scans local data and loses it on restart. It is intended
 for small datasets and serialized use, not concurrent writers or production
 storage. No database schema changes or additional dependencies are required.
+
+## Neptune adapter (offline milestone)
+
+`NeptuneGraphRepository` now implements the same contract using a small HTTPS
+client. It is not activated by the API. No AWS resources, credentials, or network
+access are needed for the tests. See [the Neptune adapter guide](docs/neptune-adapter.md)
+for request encoding, explicit construction, optional IAM dependency, and the
+integration checks that still require a real Neptune Database.

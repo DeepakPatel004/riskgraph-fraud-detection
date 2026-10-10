@@ -10,6 +10,7 @@ from app.graph.models import (
     NodeRef, TransactionNode,
 )
 from app.graph.repository import GraphRepository
+from tests.fake_neptune import fake_repository
 
 
 CUTOFF = datetime(2026, 10, 10, 12, tzinfo=timezone.utc)
@@ -23,9 +24,13 @@ def transaction(identifier="T1", card="CARD1", device="DEVICE1", *,
     )
 
 
-@pytest.fixture
-def repository() -> GraphRepository:
-    return InMemoryGraphRepository()
+@pytest.fixture(params=["memory", "fake-neptune"])
+def repository(request) -> GraphRepository:
+    if request.param == "memory":
+        yield InMemoryGraphRepository()
+    else:
+        with fake_repository() as adapter:
+            yield adapter
 
 
 def test_insertion_and_idempotent_upsert(repository):
