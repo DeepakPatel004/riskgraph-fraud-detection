@@ -1,4 +1,4 @@
-"""Scoring-only error envelope; legacy endpoint error responses stay unchanged."""
+"""Scoring/explorer error envelope; legacy endpoint responses stay unchanged."""
 
 from fastapi import HTTPException
 from fastapi.exception_handlers import (
@@ -21,8 +21,13 @@ def is_scoring_request(request):
     return getattr(route, "path", request.url.path) == "/api/v1/transactions/score"
 
 
+def is_graph_explorer_request(request):
+    return getattr(request.scope.get("route"), "path", None) == "/api/v1/transactions/{transaction_id}/graph"
+
+
 async def scoring_http_error(request, error):
-    if not is_scoring_request(request):
+    explorer = is_graph_explorer_request(request)
+    if not (is_scoring_request(request) or explorer):
         return await http_exception_handler(request, error)
     if isinstance(error, ScoringAPIError):
         detail, code, retryable, headers = error.detail, error.code, error.retryable, error.headers
@@ -34,13 +39,15 @@ async def scoring_http_error(request, error):
             503: ("Scoring service is unavailable", "SCORING_UNAVAILABLE", False),
         }.get(error.status_code, ("Scoring request failed", "SCORING_FAILED", False))
         headers = None
+        if explorer:
+            detail, code, retryable = "Graph explorer request failed", "GRAPH_EXPLORER_FAILED", False
     return JSONResponse(status_code=error.status_code, headers=headers, content={
         "detail": detail, "error": {"code": code, "retryable": retryable},
     })
 
 
 async def scoring_validation_error(request, error):
-    if not is_scoring_request(request):
+    if not (is_scoring_request(request) or is_graph_explorer_request(request)):
         return await request_validation_exception_handler(request, error)
     return JSONResponse(status_code=422, content={
         # Omit input and exception context, which may contain payment tokens.

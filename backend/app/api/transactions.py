@@ -6,6 +6,10 @@ from app.core.database import get_db
 from app.schemas.transaction import TransactionCreate, TransactionRead, TransactionPage
 from app.services.transaction_service import create_transaction, get_transaction, list_transactions
 from app.api.scoring_dependencies import get_scoring_factory
+from app.api.graph_dependencies import get_graph_population_factory
+from app.api.scoring_errors import ScoringAPIError
+from app.schemas.graph_explorer import GraphExplorerResponse
+from app.services.graph_explorer_service import GraphExplorerService
 from app.schemas.fraud_scoring import FraudScoringRequest, FraudScoringResponse, ScoringErrorResponse
 from app.services.ingestion_gate import IngestionBusy, ingestion_gate
 from app.services.scored_transaction_service import create_scored_transaction
@@ -61,3 +65,18 @@ def all_transactions(limit: int = Query(default=20, ge=1, le=100),
 @router.get("/{transaction_id}", response_model=TransactionRead)
 def by_id(transaction_id: str, db: Session = Depends(get_db)):
     return get_transaction(db, transaction_id)
+
+
+@router.get("/{transaction_id}/graph", response_model=GraphExplorerResponse,
+            summary="Explore a synchronized transaction network (restricted local demo)",
+            responses={status: {"model": ScoringErrorResponse} for status in (404, 422, 503, 500)})
+def transaction_graph(transaction_id: str, limit: int = Query(default=50, ge=1, le=100),
+                      db: Session = Depends(get_db), factory=Depends(get_graph_population_factory)):
+    try:
+        return GraphExplorerService(factory).explore(db, transaction_id, limit)
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise ScoringAPIError(500, "Graph explorer request failed", code="GRAPH_EXPLORER_FAILED") from None
