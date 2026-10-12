@@ -23,7 +23,7 @@ from app.graph.in_memory import InMemoryGraphRepository
 from app.graph.models import TransactionNode
 from app.main import app
 from app.ml.fraud_predictor import FraudPrediction, ModelError
-from app.models import GraphSyncJob, IdempotencyRecord, Transaction
+from app.models import FraudAlert, GraphSyncJob, IdempotencyRecord, Transaction
 from app.services.fraud_inference_service import FraudInferenceService
 from app.services.fraud_scoring_service import FraudScoringService
 from app.services.graph_population import GraphPopulation, neptune_population_id
@@ -163,6 +163,12 @@ def test_score_persistence_cutoff_and_one_job(environment, score, level):
         assert metadata["attributes"]["M9"] is None
         assert metadata["risk_indicators"] == response.json()["risk_indicators"]
         assert metadata["risk_indicator_version"] == 1
+        alerts = db.scalars(select(FraudAlert).where(FraudAlert.transaction_id == "scored-1")).all()
+        assert len(alerts) == (1 if level == "HIGH" else 0)
+        if alerts:
+            assert alerts[0].risk_score == response.json()["risk_score"]
+            assert alerts[0].risk_indicators == response.json()["risk_indicators"]
+            assert alerts[0].investigation_status == "OPEN"
         assert metadata["historical_features"]["card_txn_count_24h"] == 1
         assert metadata["historical_features"]["cutoff"] == "2026-10-10T05:00:00Z"
         assert db.scalar(select(func.count()).select_from(GraphSyncJob).where(
@@ -306,11 +312,13 @@ def test_dependency_failures_do_not_consume_key(environment, kind):
     assert result.status_code == (500 if kind == "unexpected" else 503)
     assert "private" not in result.text
     assert counts(e) == (0, 0, 0)
+    with e.sessions() as db:
+        assert db.scalar(select(func.count()).select_from(FraudAlert)) == 0
     e.graph.error = e.factory_error = None
     assert e.client.post(URL, json=payload(), headers=headers).status_code == 201
 
 
-@pytest.mark.parametrize("stage", ["parent", "job", "idempotency"])
+@pytest.mark.parametrize("stage", ["parent", "alert", "job", "idempotency"])
 def test_integrity_failure_rolls_back_every_record(environment, monkeypatch, stage):
     e = environment
     cls = e.sessions.class_
@@ -318,7 +326,8 @@ def test_integrity_failure_rolls_back_every_record(environment, monkeypatch, sta
 
     def fail(db, *args, **kwargs):
         models = {type(row) for row in db.new}
-        expected = {"parent": Transaction, "job": GraphSyncJob, "idempotency": IdempotencyRecord}[stage]
+        expected = {"parent": Transaction, "alert": FraudAlert, "job": GraphSyncJob,
+                    "idempotency": IdempotencyRecord}[stage]
         if expected in models:
             raise IntegrityError("private SQL", {}, RuntimeError("private credentials"))
         return original(db, *args, **kwargs)
@@ -328,8 +337,12 @@ def test_integrity_failure_rolls_back_every_record(environment, monkeypatch, sta
         result = e.client.post(URL, json=payload(), headers={"Idempotency-Key": "retryable"})
         assert result.status_code == 500 and "private" not in result.text
         assert counts(e) == (0, 0, 0)
+        with e.sessions() as db:
+            assert db.scalar(select(func.count()).select_from(FraudAlert)) == 0
     assert e.client.post(URL, json=payload(), headers={"Idempotency-Key": "retryable"}).status_code == 201
     assert counts(e) == (1, 1, 1)
+    with e.sessions() as db:
+        assert db.scalar(select(func.count()).select_from(FraudAlert)) == 1
 
 
 def test_concurrent_submission_is_busy_then_waits_for_outbox(environment):
@@ -551,6 +564,7 @@ def test_saved_threshold_boundary_persists_same_classification(environment, posi
     with e.sessions() as db:
         saved = db.get(Transaction, "scored-1")
         assert saved.risk_level == level and saved.risk_score == result.json()["risk_score"]
+        assert db.scalar(select(func.count()).select_from(FraudAlert)) == (1 if level == "HIGH" else 0)
 
 
 def test_classifier_uses_predictor_threshold_not_a_second_policy(environment):

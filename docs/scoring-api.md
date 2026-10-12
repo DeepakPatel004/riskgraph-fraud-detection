@@ -2,8 +2,10 @@
 
 `POST /api/v1/transactions/score` uses the existing `FraudScoringRequest` and
 read-only orchestrator, then saves a prediction and an outbox job. No transaction
-is inserted into Neptune before scoring. No alerts or investigation features
-are implemented. Scoring is disabled by default, with no AWS calls at import.
+is inserted into Neptune before scoring. Phase 5.1 now creates one SQL alert for
+each new HIGH result in the same commit; LOW results create none. See
+[alert API](alerts-api.md) for investigation status endpoints. Scoring is still
+disabled by default, with no AWS calls at import.
 
 ## Request and response
 
@@ -123,8 +125,9 @@ Legacy transaction endpoints keep their previous error envelope.
    using `[event_time-window, event_time)`. All exact-time and future events are
    excluded. The SQL checker closes its own session before graph/model calls.
 6. Save the transaction with `processing_status=SCORED`, score/level, and JSON
-   metadata; flush the parent, add one outbox job and optional idempotency record,
-   then commit once. Any failed insertion rolls everything back.
+   metadata; flush the parent, add one outbox job, optional idempotency record,
+   and one OPEN alert if the saved level is HIGH, then commit once. Any failed
+   insertion rolls everything back. Alert indicators match the saved result.
 7. Return the committed prediction and graph state; release the gate.
 
 `features_json.fraud_scoring` stores versioned source categories, model version,
@@ -242,7 +245,8 @@ returned 200 with one saved job. External network access was blocked during thos
 requests. This is an execution check, not a new performance evaluation.
 
 Fail-closed means uncertainty produces an error, never an invented score.
-Atomic persistence means the transaction, job and key all commit or all roll back.
+Atomic persistence means the transaction, job, key and any HIGH alert all commit
+or all roll back.
 Idempotency means a retry recovers one saved result. Request concurrency means
 multiple callers overlap; the gate permits only one ingestion workflow at a time.
 

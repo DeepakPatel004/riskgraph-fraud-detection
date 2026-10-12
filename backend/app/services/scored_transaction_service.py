@@ -7,7 +7,7 @@ from app.api.scoring_errors import ScoringAPIError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from app.models import GraphSyncJob, IdempotencyRecord, Transaction
+from app.models import FraudAlert, GraphSyncJob, IdempotencyRecord, Transaction
 from app.schemas.fraud_scoring import FraudScoringResponse
 from app.services.risk_indicators import RISK_INDICATOR_VERSION
 
@@ -75,6 +75,13 @@ def create_scored_transaction(db, payload, key, gate, scoring_factory):
             db.add(transaction)
             try:
                 db.flush()  # Parent first, with no separate commit.
+                if transaction.risk_level == "HIGH":
+                    db.add(FraudAlert(
+                        transaction_id=transaction.transaction_id,
+                        risk_score=transaction.risk_score,
+                        risk_indicators=list(result.risk_indicators),
+                        investigation_status="OPEN",
+                    ))
                 db.add(GraphSyncJob(transaction_id=payload.transaction_id))
                 if key is not None:
                     db.add(IdempotencyRecord(
