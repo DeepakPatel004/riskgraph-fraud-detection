@@ -1,5 +1,10 @@
 # Phase 3.3: one graph-aware XGBoost classifier
 
+Backend readiness and strict serving inputs are documented in the
+[Phase 3.4 inference guide](../docs/fraud-inference.md). The reusable predictor
+implementation now lives in `backend/app/ml/`; its original offline import remains
+available through `ml_training/fraud_predictor.py`. Existing artifacts are unchanged.
+
 This is a supporting fraud scorer for the backend project: one binary classifier,
 one configuration, one validation-selected threshold, and one final test evaluation.
 There is no baseline comparison, hyperparameter search or separate model variant.
