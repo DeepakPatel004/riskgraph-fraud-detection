@@ -1,5 +1,8 @@
 # RiskGraph — Step 1: Backend Foundation
 
+Offline ML data preparation: see [Phase 3.1 IEEE-CIS guide](ml_training/README.md)
+for local input paths, field mapping, synthetic UTC dates and chronological splits.
+
 An internship-focused graph-aware fraud detection and investigation platform. This milestone provides FastAPI, a SQLAlchemy schema, database health checking, and tests. **Fraud scoring and Amazon Neptune are not implemented yet.**
 
 ## Requirements
