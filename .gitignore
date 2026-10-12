@@ -59,3 +59,9 @@ data/
 *.npz
 *.csv
 *.tsv
+
+# Frontend dependencies and generated builds
+node_modules/
+frontend/dist/
+.npm-cache/
+*.log

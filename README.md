@@ -1,9 +1,99 @@
-# RiskGraph — Step 1: Backend Foundation
+# RiskGraph — Fraud Detection & Investigation Platform
 
 Offline ML data preparation: see [Phase 3.1 IEEE-CIS guide](ml_training/README.md)
 for local input paths, field mapping, synthetic UTC dates and chronological splits.
 
-An internship-focused graph-aware fraud detection and investigation platform. This milestone provides FastAPI, a SQLAlchemy schema, database health checking, and tests. **Fraud scoring and Amazon Neptune are not implemented yet.**
+An internship-focused modular monolith with FastAPI transaction, scoring, alert,
+graph exploration and dashboard APIs, a Neptune adapter, and one pretrained
+XGBoost classifier. Real Neptune deployment and verification remain pending.
+Phase 6.1 adds a React application shell and reusable API integration; its four
+pages are placeholders, not completed data views.
+
+## Frontend — Phase 6.1
+
+Use Node.js 20.19+ (20.x) or 22.12+; this phase was verified with Node 24.16.0
+and npm 11.13.0. From the repository root, in one PowerShell terminal:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Use the existing backend environment and database. For a fresh backend setup,
+follow the installation instructions below. In a second terminal:
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+Open http://127.0.0.1:5173. Routes are `/`, `/transactions`, `/graph-explorer`,
+and `/investigations`. React Router switches pages inside a shared layout.
+Reusable components hold the sidebar, header, connection badge and loading,
+error and empty states. No charts, tables or investigation workflows exist yet.
+
+Optional configuration: copy `frontend/.env.example` to `frontend/.env.local`.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | `/backend` | Public API base URL used by the browser |
+| `VITE_API_TIMEOUT_MS` | `8000` | Request timeout, integer 1–60000 milliseconds |
+| `DEV_API_TARGET` | `http://127.0.0.1:8000` | Server-side local Vite proxy target |
+
+The Vite development proxy forwards `/backend/health` to FastAPI `/health`,
+and likewise forwards `/backend/api/v1/...`. This avoids changing backend CORS.
+Restart Vite after changing environment settings. `VITE_` variables are public
+in the browser bundle: never put credentials or secrets in them. An absolute
+API URL requires that backend to explicitly allow the frontend origin.
+
+`src/api/client.js` centralizes native Fetch, timeout/cancellation, JSON,
+encoded query parameters and sanitized errors. `src/api/endpoints.js` provides
+dashboard, transaction, alert and graph helpers matching the backend contracts.
+It preserves decimal strings, pagination envelopes and nullable graph metadata.
+`ApiError` exposes `status`, `code`, `retryable`, `retryAfter` and validation
+messages, supporting both structured errors and legacy `detail` responses.
+The UI never displays raw backend error bodies. Write helpers are available
+for future explicit actions but are not called by these placeholder pages.
+
+Only `/health` is requested on app startup. Client-side navigation does not
+repeat it; the refresh button manually checks again. Connected means FastAPI
+and SQL are reachable, not that Neptune or the model is ready. No scoring,
+graph or dashboard requests run automatically. There is no authentication;
+keep both servers bound to localhost and use pseudonymized demonstration data.
+The existing graph population and scoring safety checks remain unchanged.
+
+Verification commands from `frontend/`:
+
+```powershell
+npm test
+npm run build
+npm run preview
+```
+
+Tests use Node's built-in test runner and fake Fetch responses, with no added
+test framework or AWS access. Preview opens at http://127.0.0.1:4173 and includes
+the same **local-only** proxy. A production static host does not run Vite's
+proxy: it needs an explicitly configured API reverse proxy and SPA route
+fallback, plus authentication/access controls before public deployment.
+
+Troubleshooting:
+
+- **Disconnected:** check http://127.0.0.1:8000/health, the backend terminal,
+  and `DEV_API_TARGET`, then use the refresh button. The frontend remains usable
+  while the backend is unavailable.
+- **Port already in use:** stop your own previous development server or set a
+  different port with `npm run dev -- --port 5174`. Vite fails clearly rather
+  than silently moving to another port.
+- **Configuration error or timeout:** check the URL and timeout above; restart
+  Vite after edits. Do not paste credentials into URLs.
+- **Direct URL fails on a static host:** configure SPA fallback to `index.html`.
+  Local Vite development and preview support direct route navigation already.
+
+React components are reusable pieces of the screen. React Router chooses which
+page to show for a URL. Vite runs the local development server and builds the
+browser files. API integration is the shared code that asks FastAPI for data
+and handles its replies and failures.
 
 ## Requirements
 - Python 3.11+
@@ -55,10 +145,6 @@ Ensure PostgreSQL is running and the `riskgraph` database and user exist; then r
 - Database schema and SQL initialization are for local learning; future migrations will handle schema evolution.
 - This is a prototype using only test, simulated, or pseudonymized data; do not store real payment card numbers.
 
-## Next milestone
-
-Add Pydantic transaction schemas, `POST /api/v1/transactions`, `GET /api/v1/transactions`, and idempotency logic, before connecting to Neptune.
-
 ## Step 2 — Transaction APIs
 
 No schema migration is necessary when upgrading from Step 1. The transaction and idempotency tables already exist.
@@ -98,7 +184,11 @@ Run tests:
 python -m pytest -v
 ```
 
-**Learning note:** Graph ingestion and model scoring are not implemented yet. `risk_score` and `risk_level` are null. The statuses `RECEIVED` and `PENDING` do not mean a background worker has already been started. These endpoints use demo-only tokenized identifiers and must not be deployed publicly without authentication and access restrictions.
+**Learning note:** Legacy transaction creation leaves `risk_score` and `risk_level`
+null; scoring uses its separate endpoint and readiness checks. The statuses
+`RECEIVED` and `PENDING` do not mean a background worker has already been started.
+These endpoints use demo-only tokenized identifiers and must not be deployed
+publicly without authentication and access restrictions.
 
 ## UTC timestamps
 
