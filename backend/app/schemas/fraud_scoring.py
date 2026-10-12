@@ -4,12 +4,19 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import Field, StrictStr, field_validator
+from pydantic import BaseModel, Field, StrictStr, field_validator
 
 from app.graph.models import as_utc
 from app.schemas.fraud_inference import (
     FraudInferenceResult, TransactionModelAttributes, ValidatedGraphFeatures,
 )
+
+
+RiskIndicatorCode = Literal[
+    "MULTIPLE_CARD_TRANSACTIONS_24H", "MULTIPLE_DEVICE_TRANSACTIONS_24H",
+    "CARD_MULTIPLE_DEVICES_7D", "DEVICE_MULTIPLE_CARDS_7D",
+    "AMOUNT_AT_LEAST_3X_CARD_AVERAGE_7D",
+]
 
 
 class FraudScoringRequest(TransactionModelAttributes):
@@ -67,6 +74,9 @@ class HistoricalGraphMetadata(ValidatedGraphFeatures):
 class FraudScoringResult(FraudInferenceResult):
     transaction_id: str
     historical_features: HistoricalGraphMetadata
+    risk_indicators: list[RiskIndicatorCode] = Field(
+        default_factory=list, description="Observed historical signals, not model explanations or proof of fraud.",
+    )
 
 
 class FraudScoringResponse(FraudInferenceResult):
@@ -74,3 +84,16 @@ class FraudScoringResponse(FraudInferenceResult):
 
     transaction_id: str
     graph_sync_status: Literal["PENDING", "PROCESSING", "SYNCED", "FAILED"]
+    risk_indicators: list[RiskIndicatorCode] = Field(
+        default_factory=list, description="Recorded historical signals; an empty list does not prove legitimacy.",
+    )
+
+
+class ScoringErrorMetadata(BaseModel):
+    code: str
+    retryable: bool
+
+
+class ScoringErrorResponse(BaseModel):
+    detail: str | list[dict]
+    error: ScoringErrorMetadata

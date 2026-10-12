@@ -149,7 +149,8 @@ def test_score_persistence_cutoff_and_one_job(environment, score, level):
     assert response.status_code == 201, response.text
     assert response.json() == {"transaction_id": "scored-1", "risk_score": score,
                                "risk_level": level, "model_version": "fixture-version",
-                               "graph_sync_status": "PENDING"}
+                               "graph_sync_status": "PENDING",
+                               "risk_indicators": ["AMOUNT_AT_LEAST_3X_CARD_AVERAGE_7D"]}
     assert e.graph.calls == e.predictor.calls == 1
     assert e.graph.args == ("card-pseudonym", "device-pseudonym", TIME)
     assert e.graph.get_transaction_network("scored-1").nodes == ()
@@ -160,6 +161,8 @@ def test_score_persistence_cutoff_and_one_job(environment, score, level):
         assert metadata["model_version"] == "fixture-version"
         assert metadata["attributes"]["ProductCD"] == "W"
         assert metadata["attributes"]["M9"] is None
+        assert metadata["risk_indicators"] == response.json()["risk_indicators"]
+        assert metadata["risk_indicator_version"] == 1
         assert metadata["historical_features"]["card_txn_count_24h"] == 1
         assert metadata["historical_features"]["cutoff"] == "2026-10-10T05:00:00Z"
         assert db.scalar(select(func.count()).select_from(GraphSyncJob).where(
@@ -530,3 +533,177 @@ def test_unsupported_source_refused_even_with_verified_settings(environment, mon
     finally:
         if backend == "memory":
             engine.dispose()
+
+
+@pytest.mark.parametrize("position,level", [("below", "LOW"), ("exact", "HIGH"), ("above", "HIGH")])
+def test_saved_threshold_boundary_persists_same_classification(environment, position, level):
+    import math
+    e = environment
+    # Synthetic predictor uses the saved bundle's threshold, not trained weights.
+    e.predictor.threshold = 0.7617719769477844
+    e.predictor.score = {"below": math.nextafter(e.predictor.threshold, 0),
+                         "exact": e.predictor.threshold,
+                         "above": math.nextafter(e.predictor.threshold, 1)}[position]
+    result = e.client.post(URL, json=payload())
+    assert result.status_code == 201
+    assert result.json()["risk_level"] == level
+    assert result.json()["risk_indicators"] == []  # HIGH need not have rule signals.
+    with e.sessions() as db:
+        saved = db.get(Transaction, "scored-1")
+        assert saved.risk_level == level and saved.risk_score == result.json()["risk_score"]
+
+
+def test_classifier_uses_predictor_threshold_not_a_second_policy(environment):
+    e = environment
+    e.predictor.threshold, e.predictor.score = 0.6, 0.6
+    assert e.client.post(URL, json=payload()).json()["risk_level"] == "HIGH"
+
+
+def test_indicators_replayed_from_saved_observations_not_live_graph(environment):
+    e = environment
+    seed(e)
+    headers = {"Idempotency-Key": "indicators"}
+    e.predictor.score = 0.2  # Signals can be present even for a LOW model score.
+    first = e.client.post(URL, json=payload(), headers=headers)
+    assert first.json()["risk_level"] == "LOW"
+    assert first.json()["risk_indicators"] == ["AMOUNT_AT_LEAST_3X_CARD_AVERAGE_7D"]
+    e.graph.error = RuntimeError("graph is now offline")
+    e.factory_error = ModelError("model is now offline")
+    replay = e.client.post(URL, json=payload(), headers=headers)
+    assert replay.status_code == 200 and replay.json() == first.json()
+    assert e.graph.calls == e.predictor.calls == 1
+    assert counts(e) == (2, 2, 1)
+
+
+def test_older_saved_scores_without_indicators_are_readable(environment):
+    e = environment
+    headers = {"Idempotency-Key": "old-score"}
+    assert e.client.post(URL, json=payload(), headers=headers).status_code == 201
+    with e.sessions() as db:
+        saved = db.get(Transaction, "scored-1")
+        metadata = dict(saved.features_json["fraud_scoring"])
+        metadata.pop("risk_indicators")
+        metadata.pop("risk_indicator_version")
+        saved.features_json = {"fraud_scoring": metadata}
+        db.commit()
+    e.factory_error = ModelError("must not load model")
+    result = e.client.post(URL, json=payload(), headers=headers)
+    assert result.status_code == 200 and result.json()["risk_indicators"] == []
+    assert e.graph.calls == e.predictor.calls == 1
+
+
+@pytest.mark.parametrize("failure,expected_status,code,retryable", [
+    ("invalid", 422, "VALIDATION_ERROR", False),
+    ("duplicate", 409, "DUPLICATE_TRANSACTION", False),
+    ("conflicting-key", 409, "IDEMPOTENCY_CONFLICT", False),
+    ("unknown", 503, "GRAPH_FRESHNESS_UNAVAILABLE", True),
+    ("stale", 503, "GRAPH_FRESHNESS_UNAVAILABLE", True),
+    ("neptune", 503, "GRAPH_UNAVAILABLE", True),
+    ("model", 503, "MODEL_UNAVAILABLE", True),
+    ("busy", 503, "INGESTION_BUSY", True),
+    ("database", 500, "PERSISTENCE_ERROR", False),
+])
+def test_structured_errors_are_sanitized_and_never_commit_scores(
+    environment, monkeypatch, caplog, failure, expected_status, code, retryable,
+):
+    from sqlalchemy.exc import OperationalError
+    from app.graph.neptune_client import NeptuneTransportError
+    e = environment
+    secret = "private-card-device-credential-SQL"
+    headers = {"Idempotency-Key": "errors"}
+    data = payload()
+    if failure == "invalid":
+        data["card_token"] = secret * 10
+    elif failure in {"duplicate", "conflicting-key"}:
+        assert e.client.post(URL, json=data, headers=headers).status_code == 201
+        if failure == "duplicate":
+            headers = {}
+        else:
+            data["amount"] = "101"
+    elif failure == "unknown":
+        e.verified = False
+    elif failure == "stale":
+        seed(e, status="FAILED", job_status="FAILED")
+    elif failure == "neptune":
+        e.graph.error = NeptuneTransportError(secret)
+    elif failure == "model":
+        e.factory_error = ModelError(secret)
+    elif failure == "database":
+        def fail(db):
+            db.flush()
+            raise OperationalError(secret, {}, RuntimeError(secret))
+        monkeypatch.setattr(e.sessions.class_, "commit", fail)
+    before = counts(e)
+    if failure == "busy":
+        with ingestion_gate(e.engine).hold():
+            result = e.client.post(URL, json=data, headers=headers)
+        assert result.headers["Retry-After"] == "1"
+    else:
+        result = e.client.post(URL, json=data, headers=headers)
+    assert result.status_code == expected_status, result.text
+    assert set(result.json()) == {"detail", "error"}
+    assert result.json()["error"] == {"code": code, "retryable": retryable}
+    assert secret not in result.text and secret not in caplog.text
+    assert counts(e) == before
+    if failure == "neptune":
+        assert e.graph.calls == 1 and e.predictor.calls == 0
+
+
+@pytest.mark.parametrize("problem", ["missing", "corrupt"])
+def test_actual_artifact_loader_failures_are_controlled_unavailable(environment, problem, caplog):
+    from app.ml.fraud_predictor import XGBoostFraudPredictor
+    e = environment
+    path = e.root / "private-model-directory"
+    if problem == "corrupt":
+        path.mkdir()
+        (path / "manifest.json").write_text("corrupt-private-artifact", encoding="utf-8")
+
+    def factory(*args):
+        XGBoostFraudPredictor.load(path)
+        pytest.fail("Invalid artifacts must not produce an inference service")
+
+    app.dependency_overrides[get_scoring_factory] = lambda: factory
+    result = e.client.post(URL, json=payload(), headers={"Idempotency-Key": "artifacts"})
+    assert result.status_code == 503
+    assert result.json()["error"] == {"code": "MODEL_UNAVAILABLE", "retryable": True}
+    assert "private" not in result.text and "private-model" not in caplog.text
+    assert counts(e) == (0, 0, 0)
+
+
+def test_production_population_policy_remains_fail_closed_with_error_code(environment, monkeypatch):
+    e = environment
+    app.dependency_overrides.pop(get_scoring_factory)
+    monkeypatch.setattr("app.core.config.get_settings", lambda: Settings(fraud_scoring_enabled=False))
+    result = e.client.post(URL, json=payload())
+    assert result.status_code == 503
+    assert result.json()["error"] == {"code": "SCORING_UNAVAILABLE", "retryable": False}
+    assert counts(e) == (0, 0, 0)
+
+
+def test_untrusted_http_dependency_message_is_not_exposed(environment, caplog):
+    from fastapi import HTTPException
+    e = environment
+    e.factory_error = HTTPException(503, "private-card-device-credential")
+    result = e.client.post(URL, json=payload())
+    assert result.status_code == 503
+    assert result.json()["error"]["code"] == "SCORING_UNAVAILABLE"
+    assert "private-card" not in result.text and "private-card" not in caplog.text
+
+
+def test_legacy_error_contract_unchanged(environment):
+    e = environment
+    legacy = payload("legacy")
+    legacy.pop("ProductCD")
+    assert e.client.post("/api/v1/transactions", json=legacy).status_code == 201
+    result = e.client.post("/api/v1/transactions", json=legacy)
+    assert result.status_code == 409
+    assert result.json() == {"detail": "Transaction ID already exists"}
+
+
+def test_openapi_documents_scoring_indicators_and_error_envelope(environment):
+    document = environment.client.get("/openapi.json").json()
+    schemas = document["components"]["schemas"]
+    assert "risk_indicators" in schemas["FraudScoringResponse"]["properties"]
+    for status in ("409", "422", "503", "500"):
+        schema = document["paths"][URL]["post"]["responses"][status]["content"]["application/json"]["schema"]
+        assert schema["$ref"].endswith("/ScoringErrorResponse")

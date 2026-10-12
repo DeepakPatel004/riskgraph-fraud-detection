@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.schemas.transaction import TransactionCreate, TransactionRead, TransactionPage
 from app.services.transaction_service import create_transaction, get_transaction, list_transactions
 from app.api.scoring_dependencies import get_scoring_factory
-from app.schemas.fraud_scoring import FraudScoringRequest, FraudScoringResponse
+from app.schemas.fraud_scoring import FraudScoringRequest, FraudScoringResponse, ScoringErrorResponse
 from app.services.ingestion_gate import IngestionBusy, ingestion_gate
 from app.services.scored_transaction_service import create_scored_transaction
 
@@ -36,10 +36,11 @@ def create(payload: TransactionCreate, response: Response, db: Session = Depends
                          "Atomically saves the prediction and one graph outbox job. "
                          "Identical Idempotency-Key retries return 200 without inference. "
                          "New transactions return 201; unsafe history or unavailable model returns 503.",
-             responses={200: {"description": "Previously committed prediction"},
-                        409: {"description": "Conflicting key/ID or late event"},
-                        503: {"description": "Busy ingestion, unknown history, or model unavailable"},
-                        500: {"description": "Unexpected persistence/server failure"}})
+             responses={200: {"description": "Previously committed prediction", "model": FraudScoringResponse},
+                        409: {"description": "Conflicting key/ID or late event", "model": ScoringErrorResponse},
+                        422: {"description": "Invalid request", "model": ScoringErrorResponse},
+                        503: {"description": "Busy ingestion, unknown history, or model unavailable", "model": ScoringErrorResponse},
+                        500: {"description": "Unexpected persistence/server failure", "model": ScoringErrorResponse}})
 def score(payload: FraudScoringRequest, response: Response, db: Session = Depends(get_db),
           factory=Depends(get_scoring_factory),
           idempotency_key: Annotated[str | None, Header(min_length=1, max_length=128)] = None):

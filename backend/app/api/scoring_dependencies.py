@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from fastapi import HTTPException
+from app.api.scoring_errors import ScoringAPIError
 
 
 @lru_cache(maxsize=1)
@@ -31,12 +31,13 @@ def build_scoring_service(engine, gate):
     identity = neptune_population_id(settings, engine)
     if (not settings.fraud_scoring_enabled or not settings.graph_population_verified
             or settings.scoring_api_workers != 1 or identity is None):
-        raise HTTPException(503, "Scoring requires a verified Neptune population and single-host SQLite policy")
+        raise ScoringAPIError(503, "Scoring requires a verified Neptune population and single-host SQLite policy",
+                              code="SCORING_UNAVAILABLE")
     try:
         graph = _graph(settings.neptune_endpoint, settings.neptune_port, settings.neptune_timeout,
                        settings.neptune_iam_auth_enabled, settings.neptune_region, identity)
     except ValueError:
-        raise HTTPException(503, "Neptune scoring configuration is unavailable") from None
+        raise ScoringAPIError(503, "Neptune scoring configuration is unavailable", code="SCORING_UNAVAILABLE") from None
     population = GraphPopulation(graph, identity, verified=True)
     checker = SQLGraphFreshnessChecker(sessionmaker(bind=engine), population, gate)
     inference = (get_fraud_inference_service(settings.fraud_model_artifact_dir)

@@ -16,6 +16,7 @@ from app.schemas.fraud_scoring import (
     FraudScoringRequest, FraudScoringResult, HistoricalGraphMetadata,
 )
 from app.services.fraud_inference_service import FraudInferenceService
+from app.services.risk_indicators import observed_risk_indicators
 
 
 class GraphFreshness(Enum):
@@ -115,6 +116,7 @@ class FraudScoringService:
                 result = FraudScoringResult(
                     **prediction.model_dump(), transaction_id=request.transaction_id,
                     historical_features=metadata,
+                    risk_indicators=observed_risk_indicators(request.amount, features),
                 )
             # Return after the guard exits, so release/verification errors fail too.
             return result

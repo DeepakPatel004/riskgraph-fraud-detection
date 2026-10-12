@@ -3,11 +3,13 @@
 import hashlib
 
 from fastapi import HTTPException
+from app.api.scoring_errors import ScoringAPIError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.models import GraphSyncJob, IdempotencyRecord, Transaction
 from app.schemas.fraud_scoring import FraudScoringResponse
+from app.services.risk_indicators import RISK_INDICATOR_VERSION
 
 
 def saved_score(transaction) -> FraudScoringResponse:
@@ -17,9 +19,10 @@ def saved_score(transaction) -> FraudScoringResponse:
             transaction_id=transaction.transaction_id, risk_score=transaction.risk_score,
             risk_level=transaction.risk_level, model_version=saved["model_version"],
             graph_sync_status=transaction.graph_sync_status,
+            risk_indicators=saved.get("risk_indicators", []),
         )
     except Exception:
-        raise HTTPException(500, "Saved scoring metadata is inconsistent") from None
+        raise ScoringAPIError(500, "Saved scoring metadata is inconsistent", code="INCONSISTENT_STATE") from None
 
 
 def resolve_existing(db, payload, key, request_hash):
@@ -27,13 +30,13 @@ def resolve_existing(db, payload, key, request_hash):
         prior = db.get(IdempotencyRecord, key)
         if prior is not None:
             if prior.request_hash != request_hash:
-                raise HTTPException(409, "Idempotency key was used for a different request")
+                raise ScoringAPIError(409, "Idempotency key was used for a different request", code="IDEMPOTENCY_CONFLICT")
             transaction = db.get(Transaction, prior.transaction_id)
             if transaction is None or prior.status != "COMPLETED":
-                raise HTTPException(500, "Idempotency record is inconsistent")
+                raise ScoringAPIError(500, "Idempotency record is inconsistent", code="INCONSISTENT_STATE")
             return saved_score(transaction)
     if db.get(Transaction, payload.transaction_id) is not None:
-        raise HTTPException(409, "Transaction ID already exists")
+        raise ScoringAPIError(409, "Transaction ID already exists", code="DUPLICATE_TRANSACTION")
     return None
 
 
@@ -49,7 +52,7 @@ def create_scored_transaction(db, payload, key, gate, scoring_factory):
                 return replay, False
             latest = db.scalar(select(func.max(Transaction.event_time)))
             if latest is not None and payload.event_time < latest:
-                raise HTTPException(409, "Late event precedes an accepted transaction")
+                raise ScoringAPIError(409, "Late event precedes an accepted transaction", code="LATE_EVENT")
             engine = db.get_bind()
             # End the read transaction before constructing/calling graph dependencies.
             db.rollback()
@@ -65,6 +68,8 @@ def create_scored_transaction(db, payload, key, gate, scoring_factory):
                     "attributes": {name: getattr(payload, name) for name in
                                    ("ProductCD", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9")},
                     "historical_features": result.historical_features.model_dump(mode="json"),
+                    "risk_indicators": result.risk_indicators,
+                    "risk_indicator_version": RISK_INDICATOR_VERSION,
                 }},
             )
             db.add(transaction)
@@ -89,14 +94,15 @@ def create_scored_transaction(db, payload, key, gate, scoring_factory):
         raise
     except SQLAlchemyError:
         db.rollback()
-        raise HTTPException(500, "Could not persist scored transaction") from None
+        raise ScoringAPIError(500, "Could not persist scored transaction", code="PERSISTENCE_ERROR") from None
     except Exception as error:
         from app.services.ingestion_gate import IngestionBusy
         db.rollback()
         if isinstance(error, IngestionBusy):
-            raise HTTPException(503, "Transaction ingestion is busy; retry later",
+            raise ScoringAPIError(503, "Transaction ingestion is busy; retry later",
+                                code="INGESTION_BUSY", retryable=True,
                                 headers={"Retry-After": "1"}) from None
-        raise HTTPException(500, "Scored transaction failed") from None
+        raise ScoringAPIError(500, "Scored transaction failed", code="SCORING_FAILED") from None
 
 
 def run_scoring(factory, engine, gate, payload):
@@ -107,18 +113,22 @@ def run_scoring(factory, engine, gate, payload):
             FraudScoringError, GraphFreshnessError, GraphHistoryError,
         )
     except ImportError:
-        raise HTTPException(503, "Fraud model runtime is unavailable") from None
+        raise ScoringAPIError(503, "Fraud model runtime is unavailable", code="MODEL_UNAVAILABLE", retryable=True) from None
     try:
         return factory(engine, gate).score(payload)
     except HTTPException:
         raise
     except SQLAlchemyError:
         raise  # SQL checker failures remain server/database errors.
-    except (GraphFreshnessError, GraphHistoryError):
-        raise HTTPException(503, "Historical graph is unavailable or incomplete") from None
+    except GraphFreshnessError:
+        raise ScoringAPIError(503, "Historical graph is unavailable or incomplete",
+                              code="GRAPH_FRESHNESS_UNAVAILABLE", retryable=True) from None
+    except GraphHistoryError:
+        raise ScoringAPIError(503, "Historical graph is unavailable or incomplete",
+                              code="GRAPH_UNAVAILABLE", retryable=True) from None
     except ModelError:
-        raise HTTPException(503, "Fraud model is unavailable") from None
+        raise ScoringAPIError(503, "Fraud model is unavailable", code="MODEL_UNAVAILABLE", retryable=True) from None
     except FraudScoringError:
-        raise HTTPException(500, "Fraud scoring failed") from None
+        raise ScoringAPIError(500, "Fraud scoring failed", code="SCORING_FAILED") from None
     except Exception:
-        raise HTTPException(500, "Fraud scoring failed") from None
+        raise ScoringAPIError(500, "Fraud scoring failed", code="SCORING_FAILED") from None
