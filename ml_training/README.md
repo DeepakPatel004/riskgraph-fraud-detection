@@ -1,6 +1,7 @@
 # Phase 3.1: IEEE-CIS preparation
 
 For the next offline step, see [Phase 3.2 historical graph features](GRAPH_FEATURES.md).
+The single model is documented in [Phase 3.3 classifier guide](CLASSIFIER.md).
 
 This offline tool validates, profiles, maps and chronologically splits the IEEE-CIS
 **training** CSVs. It neither imports backend services nor accesses RiskGraph's
