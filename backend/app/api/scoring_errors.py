@@ -1,4 +1,4 @@
-"""Scoring/explorer error envelope; legacy endpoint responses stay unchanged."""
+"""Scoring/explorer/dashboard envelope; legacy endpoint responses stay unchanged."""
 
 from fastapi import HTTPException
 from fastapi.exception_handlers import (
@@ -25,9 +25,17 @@ def is_graph_explorer_request(request):
     return getattr(request.scope.get("route"), "path", None) == "/api/v1/transactions/{transaction_id}/graph"
 
 
+def is_dashboard_request(request):
+    return getattr(request.scope.get("route"), "path", None) in {
+        "/api/v1/dashboard/summary", "/api/v1/dashboard/risk-distribution",
+        "/api/v1/dashboard/transaction-trends", "/api/v1/dashboard/alert-status",
+    }
+
+
 async def scoring_http_error(request, error):
     explorer = is_graph_explorer_request(request)
-    if not (is_scoring_request(request) or explorer):
+    dashboard = is_dashboard_request(request)
+    if not (is_scoring_request(request) or explorer or dashboard):
         return await http_exception_handler(request, error)
     if isinstance(error, ScoringAPIError):
         detail, code, retryable, headers = error.detail, error.code, error.retryable, error.headers
@@ -41,13 +49,15 @@ async def scoring_http_error(request, error):
         headers = None
         if explorer:
             detail, code, retryable = "Graph explorer request failed", "GRAPH_EXPLORER_FAILED", False
+        if dashboard:
+            detail, code, retryable = "Dashboard request failed", "DASHBOARD_FAILED", False
     return JSONResponse(status_code=error.status_code, headers=headers, content={
         "detail": detail, "error": {"code": code, "retryable": retryable},
     })
 
 
 async def scoring_validation_error(request, error):
-    if not (is_scoring_request(request) or is_graph_explorer_request(request)):
+    if not (is_scoring_request(request) or is_graph_explorer_request(request) or is_dashboard_request(request)):
         return await request_validation_exception_handler(request, error)
     return JSONResponse(status_code=422, content={
         # Omit input and exception context, which may contain payment tokens.
