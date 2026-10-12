@@ -187,6 +187,16 @@ def test_unvalidated_inputs_rejected():
         model_input(transaction(), {})
 
 
+@pytest.mark.parametrize("changes", [{"currency": "INR"}, {"amount": Decimal("-1")}])
+def test_copied_models_cannot_bypass_inference_validation(artifacts, changes):
+    # Pydantic model_copy does not validate updates; the service must revalidate.
+    copied = transaction().model_copy(update=changes)
+    service = get_fraud_inference_service(artifacts.path)
+    with pytest.raises(runtime.ModelError, match="Malformed inference inputs"):
+        service.predict(copied, history())
+    assert not hasattr(artifacts.preprocessor, "last_matrix")
+
+
 @pytest.mark.parametrize("problem", ["missing", "corrupt", "schema", "configured-order", "dependency", "best-iteration", "currency"])
 def test_artifact_failures_are_clear_without_fallback(artifacts, problem):
     if problem == "missing":

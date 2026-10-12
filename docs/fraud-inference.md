@@ -1,5 +1,8 @@
 # Phase 3.4: read-only model inference
 
+See the [Phase 4 integration contract](phase-4-inference-contract.md) for the
+verified handoff requirements and remaining integration decisions.
+
 `app.services.fraud_inference_service` turns validated inputs into a score, risk
 level and model version. It does not query SQL/Neptune, write records, create alerts
 or change graph sync jobs. No public endpoint or SQL schema is changed. The Phase 4
