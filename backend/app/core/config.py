@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     graph_sync_lease_seconds: float = Field(default=300, gt=0, allow_inf_nan=False)
     graph_sync_poll_interval: float = Field(default=1, gt=0, allow_inf_nan=False)
     graph_sync_batch_size: int = Field(default=20, ge=1)
+    fraud_scoring_enabled: bool = False
+    # Operator attestation for a dedicated, reconciled graph; never auto-enabled.
+    graph_population_verified: bool = False
+    graph_population_name: str | None = Field(default=None, min_length=1, max_length=128)
+    scoring_api_workers: int = Field(default=1, ge=1)
+    fraud_model_artifact_dir: str | None = None
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

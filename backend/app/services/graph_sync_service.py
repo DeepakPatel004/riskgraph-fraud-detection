@@ -86,11 +86,12 @@ def retry_failed_job(session_factory: SessionFactory, job_id: str,
 class GraphSyncService:
     def __init__(self, session_factory: SessionFactory, graph: GraphRepository,
                  options: GraphSyncOptions | None = None,
-                 clock: Callable[[], datetime] = utc_now):
+                 clock: Callable[[], datetime] = utc_now, population_id: str | None = None):
         self.session_factory = session_factory
         self.graph = graph
         self.options = options or GraphSyncOptions()
         self.clock = clock
+        self.population_id = population_id
 
     def _now(self) -> datetime:
         return as_utc(self.clock())
@@ -166,6 +167,7 @@ class GraphSyncService:
                 GraphSyncJob.job_id == claim.job_id, GraphSyncJob.status == "PROCESSING",
                 GraphSyncJob.lease_token == claim.lease_token,
             ).values(status=status, lease_token=None, next_attempt_at=due,
+                     graph_population_id=self.population_id if success else None,
                      last_error=None if success else "Graph synchronization failed"))
             if result.rowcount != 1:
                 return False

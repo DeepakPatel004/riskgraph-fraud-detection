@@ -1,8 +1,9 @@
 # Phase 3.5: verified inference contract for Phase 4
 
-Phase 4.1 now supplies a separate scoring input and read-only orchestrator; see
-[fraud scoring](fraud-scoring.md). Public scoring endpoints and a persistent
-freshness checker remain future work. The inference contract below is unchanged.
+This document records the Phase 3.5 handoff. Phase 4.1 supplies the separate
+[read-only orchestrator](fraud-scoring.md); Phase 4.2 now provides the
+[public scoring and persistence workflow](scoring-api.md). The inference service
+contract below remains unchanged; future-work notes describe the original handoff.
 
 Inference means using the existing trained model to score one transaction.
 This contract describes future integration; no scoring endpoint or startup wiring

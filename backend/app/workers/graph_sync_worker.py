@@ -81,7 +81,10 @@ def main(argv=None) -> int:
         max_delay=settings.graph_sync_max_delay, max_attempts=settings.graph_sync_max_attempts,
         lease_seconds=settings.graph_sync_lease_seconds,
     )
-    service = GraphSyncService(SessionLocal, graph, options)
+    from app.core.database import engine
+    from app.services.graph_population import neptune_population_id
+    population_id = neptune_population_id(settings, engine) if args.adapter == "neptune" else None
+    service = GraphSyncService(SessionLocal, graph, options, population_id=population_id)
     stop = Event()
     previous_handlers = {}
     try:

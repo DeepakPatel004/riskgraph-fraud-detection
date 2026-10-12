@@ -1,9 +1,9 @@
 # Phase 4.1: read-only fraud scoring orchestration
 
 `FraudScoringService` coordinates existing graph history and model inference.
-There is no public scoring endpoint, SQL write, graph write, alert creation or
-sync-job creation. Existing transaction endpoints and their INR default remain
-unchanged. No model is loaded by constructing the scoring service.
+The orchestrator performs no SQL write, graph write, alert creation or sync-job
+creation. Phase 4.2 adds the separate [public persistence workflow](scoring-api.md).
+No model is loaded by constructing the scoring service.
 
 ## Request and response
 
@@ -100,12 +100,11 @@ cover the read instead of a racy standalone check before it.
   and guard errors become sanitized `FraudScoringError`. Guard-exit failure also
   prevents returning a score. Nothing logs raw dependency errors or input tokens.
 
-Phase 4.2 must implement source/worker-aware freshness, choose its concurrency and
-late-arrival policy, wire startup dependencies and define the public HTTP scoring
-contract and error mappings. It must also decide category sourcing, idempotency,
-prediction/provenance persistence and later alerts. Those steps are deliberately
-not implemented here. Existing transaction endpoints still accept INR and blank
-device tokens; only the separate scoring input applies the stricter contract.
+The [Phase 4.2 workflow](scoring-api.md) now supplies SQL-backed freshness,
+serialization, late-event handling, lazy dependencies and prediction persistence.
+The read-only orchestrator remains independent of that workflow. Existing
+transaction inputs still accept INR and blank device tokens; only scoring input
+applies the stricter contract. Alerts remain future work.
 
 Run all tests from `backend/` using the existing virtual environment:
 

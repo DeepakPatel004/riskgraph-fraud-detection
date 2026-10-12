@@ -24,6 +24,12 @@ def create_transaction(db: Session, data: TransactionCreate, key: str | None) ->
     if db.get(Transaction, data.transaction_id):
         raise HTTPException(status_code=409, detail="Transaction ID already exists")
 
+    # Once scoring has begun, late legacy writes would retroactively change the
+    # graph history used by saved predictions. Idempotent replays above are exempt.
+    latest_score = db.scalar(select(func.max(Transaction.event_time)).where(Transaction.risk_score.is_not(None)))
+    if latest_score is not None and data.event_time < latest_score:
+        raise HTTPException(status_code=409, detail="Late event precedes an accepted scored transaction")
+
     transaction = Transaction(**data.model_dump(), processing_status="RECEIVED", graph_sync_status="PENDING")
     db.add(transaction)
     try:

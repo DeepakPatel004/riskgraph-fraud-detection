@@ -67,3 +67,10 @@ class HistoricalGraphMetadata(ValidatedGraphFeatures):
 class FraudScoringResult(FraudInferenceResult):
     transaction_id: str
     historical_features: HistoricalGraphMetadata
+
+
+class FraudScoringResponse(FraudInferenceResult):
+    """Saved prediction plus the transaction's current outbox state."""
+
+    transaction_id: str
+    graph_sync_status: Literal["PENDING", "PROCESSING", "SYNCED", "FAILED"]
