@@ -1,0 +1,15 @@
+# Optional trusted local bundle. This does not enable scoring or Neptune.
+services:
+  backend:
+    build:
+      args:
+        INSTALL_ML: "true"
+    environment:
+      FRAUD_MODEL_ARTIFACT_DIR: /models/fraud_classifier
+    volumes:
+      - type: bind
+        source: ${RISKGRAPH_MODEL_DIR:-./artifacts/fraud_classifier}
+        target: /models/fraud_classifier
+        read_only: true
+        bind:
+          create_host_path: false

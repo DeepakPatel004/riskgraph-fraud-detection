@@ -1,0 +1,51 @@
+name: riskgraph-local
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: sqlite:////data/riskgraph.db
+      GRAPH_SYNC_ADAPTER: disabled
+      FRAUD_SCORING_ENABLED: "false"
+      GRAPH_POPULATION_VERIFIED: "false"
+      SCORING_API_WORKERS: "1"
+      AWS_EC2_METADATA_DISABLED: "true"
+    volumes:
+      - sqlite_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import json, urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4); assert json.load(r)['database']=='connected'"]
+      interval: 10s
+      timeout: 15s
+      retries: 6
+      start_period: 30s
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "127.0.0.1:${RISKGRAPH_HTTP_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+  # No graph worker: memory is ephemeral; Neptune requires separate verification.
+volumes:
+  sqlite_data:

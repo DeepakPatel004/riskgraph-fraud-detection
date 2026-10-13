@@ -1,0 +1,17 @@
+# Allow only backend runtime source and dependency manifests into the context.
+**
+!backend/
+!backend/Dockerfile
+!backend/requirements.txt
+!backend/requirements-ml.txt
+!backend/app/
+!backend/app/**
+!backend/scripts/
+!backend/scripts/**
+**/__pycache__/
+**/*.py[cod]
+**/.env*
+**/*.db
+**/*.sqlite*
+**/*.pem
+**/*.key

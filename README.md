@@ -11,7 +11,24 @@ transactions, a read-only Graph Explorer and an investigation interface for
 reviewing alerts and updating their status.
 Normal graph access still requires real Neptune population verification.
 
-## Frontend — Phase 6.4
+## Local Docker setup — Phase 7.1
+
+With Docker Desktop running Linux containers, run from the repository root:
+
+```powershell
+docker compose build
+docker compose run --rm --no-deps backend python -m scripts.init_db
+docker compose up -d --wait
+```
+
+Open http://127.0.0.1:8080. This uses a **separate named-volume SQLite database**;
+the existing host database is untouched. Stop with `docker compose down`;
+do not add `-v`, which would remove the database volume.
+Neptune, scoring and the graph worker remain disabled. Model artifacts are
+optional and never baked into images. See [the Docker guide](docs/docker-setup.md)
+for read-only model mounts, migrations, troubleshooting and local limitations.
+
+## Running the frontend without Docker
 
 Use Node.js 20.19+ (20.x) or 22.12+; this phase was verified with Node 24.16.0
 and npm 11.13.0. From the repository root, in one PowerShell terminal:
