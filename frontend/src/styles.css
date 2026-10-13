@@ -798,6 +798,53 @@ button:disabled { cursor: not-allowed; }
 .detail-grid dd { font-size: 12px; margin: 0; color: #334b65; overflow-wrap: anywhere; }
 .graph-link { color: #287d6d; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.graph-search-form { display: flex; align-items: end; gap: 12px; margin-bottom: 24px; max-width: 720px; }
+.graph-search-form>div:first-child { flex: 1; min-width: 0; }
+.graph-search-form>div:nth-child(2) { width: 100px; }
+.graph-search-form label, .graph-node-picker label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 7px; }
+.graph-search-form input, .graph-node-picker select { width: 100%; padding: 10px 12px; border: 1px solid #d6e0e9; border-radius: 6px; background: white; font: inherit; font-size: 12px; color: #334b65; }
+.graph-search-form input:focus-visible, .graph-node-picker select:focus-visible { outline: 2px solid #358d7b; outline-offset: 2px; }
+.graph-search-form .primary-button { height: 40px; }
+.graph-validation { margin-bottom: 22px; }
+.graph-summary { font-size: 12px; margin-bottom: 16px; color: #657b94; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.graph-summary strong { color: #2f4b68; }
+.graph-summary .truncation-unknown { color: #8a632f; }
+.graph-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
+.graph-panel { min-width: 0; }
+.graph-legend { display: flex; gap: 12px 20px; flex-wrap: wrap; padding: 18px 20px; margin: 0; list-style: none; border-bottom: 1px solid #edf1f6; }
+.graph-legend li { display: flex; align-items: center; gap: 7px; font-size: 10px; color: #657b94; }
+.graph-legend span { width: 12px; height: 12px; display: inline-block; }
+.legend-transaction { background: #527fa6; border-radius: 3px; }
+.legend-card { background: #3c9c88; border-radius: 50%; }
+.legend-device { background: #9680ba; transform: rotate(45deg); }
+.legend-root { background: #172b43; border: 2px solid #77d4c1; border-radius: 3px; }
+.graph-viewer { position: relative; background: #fafcfd; }
+.graph-controls { display: flex; flex-wrap: wrap; gap: 5px; padding: 12px 14px 0; }
+.graph-controls .icon-button { width: 32px; height: 32px; }
+.graph-canvas { width: 100%; height: 460px; overflow: hidden; }
+.graph-help { padding: 10px 18px 14px; font-size: 10px; color: #7b8da2; border-bottom: 1px solid #edf1f6; }
+.graph-node-picker { padding: 16px 20px; }
+.graph-node-details { padding: 22px 20px; }
+.graph-node-details h2 { font-size: 14px; font-weight: 600; margin-bottom: 20px; }
+.graph-node-details h3 { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; margin: 12px 0; }
+.graph-node-details dl { margin: 16px 0 24px; }
+.graph-node-details dt { font-size: 10px; color: #8290a3; margin: 16px 0 5px; }
+.graph-node-details dd { margin: 0; font-size: 12px; color: #405b77; overflow-wrap: anywhere; }
+.graph-node-details .opaque-id { font-size: 10px; font-family: monospace; color: #8290a3; }
+.node-type { display: inline-block; border-radius: 4px; font-size: 10px; padding: 4px 8px; }
+.node-transaction { color: #42678c; background: #eaf1f9; }
+.node-card { color: #237c68; background: #edf7f2; }
+.node-device { color: #796399; background: #f1edf8; }
+@media(max-width:1100px) {
+  .graph-workspace { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+@media(max-width:560px) {
+  .graph-search-form { flex-wrap: wrap; }
+  .graph-search-form>div:first-child { flex-basis: 100%; }
+  .graph-search-form>div:nth-child(2) { flex: 1; }
+  .graph-canvas { height: 350px; }
+  .graph-legend { gap: 12px 16px; padding: 16px; }
+}
 @media(max-width:1200px) {
   .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .view-toolbar { align-items: flex-start; }

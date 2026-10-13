@@ -21,7 +21,7 @@ export function TransactionDetail({ resource, onClose }) {
             <div><dt>Graph synchronization</dt><dd>{transaction.graph_sync_status}</dd></div>
           </dl>
           <Link className="secondary-button graph-link" to={graphExplorerUrl(transaction.transaction_id)}>Open Graph Explorer<ArrowUpRight size={15} aria-hidden="true" /></Link>
-          <p className="muted-note">Graph visualization is planned for Phase 6.3. Card and device tokens are intentionally omitted.</p>
+          <p className="muted-note">Graph access requires verified synchronization. Card and device tokens are intentionally omitted.</p>
         </>}
   </section>
 }

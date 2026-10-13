@@ -1,8 +1,9 @@
-# RiskGraph frontend — Phase 6.2
+# RiskGraph frontend — Phase 6.3
 
 React components are reusable screen pieces. The Overview and Transactions
 pages share the Phase 6.1 layout, native Fetch client and local Vite proxy.
-Graph Explorer and Investigations remain placeholders.
+Graph Explorer now provides read-only Cytoscape.js networks. Investigations
+remains a placeholder.
 
 ## Start and verify
 
@@ -24,8 +25,9 @@ Open http://127.0.0.1:5173. From `frontend/`, run `npm test` and `npm run build`
 Tests use Node's built-in runner with small synthetic fixtures, not AWS or large
 datasets. From `backend/`, run `.\.venv\Scripts\python.exe -m pytest -q`.
 See the [project README](../README.md) for environment variables and proxy setup.
-Recharts 3.10.1 is the only direct dependency added in this phase. The dashboard
-route loads on demand so chart code is not in the initial transaction bundle.
+Phase 6.2 added Recharts 3.10.1; Phase 6.3 adds only Cytoscape.js 3.34.3.
+Dashboard and Graph Explorer routes load on demand, keeping their visualization
+libraries out of the initial transaction bundle.
 Chart containers follow [Recharts' responsive sizing guidance](https://recharts.github.io/en-US/api/ResponsiveContainer/).
 
 ## Overview data sources
@@ -72,7 +74,7 @@ but requires a complete, case-sensitive ID. It does not filter the current page
 or support partial matching. A missing record shows a sanitized 404 message.
 Details are shown inline with a close button and a link to
 `/graph-explorer?transaction_id=...`, encoded using URLSearchParams. Phase 6.3
-will consume this parameter; no graph query or visualization is implemented here.
+consumes this parameter and automatically requests the bounded network.
 Only display fields are retained in transaction view state; card/device tokens
 are omitted. No model internals or credentials are displayed.
 
@@ -94,5 +96,101 @@ production data or model performance claims. The application database is untouch
 
 There is no authentication. Keep this a localhost-only demo. No creation,
 scoring, alert updates, AWS calls, model loading or safety bypasses occur in these
-views. Real Neptune verification, Graph Explorer visualization, investigation
-workflows and deployment remain outside Phase 6.2.
+views. Real Neptune verification, investigation workflows and deployment remain
+outside this phase.
+
+## Graph Explorer — Phase 6.3
+
+Open `/graph-explorer` and enter an exact transaction ID (1–64 letters, digits,
+underscores or hyphens). Choose a whole-number node limit from 1 to 100 (default
+50), then **Load Graph**. The limit counts every entity, not only transactions.
+The existing shared API client makes exactly one request:
+
+```http
+GET /api/v1/transactions/{transaction_id}/graph?limit=50
+```
+
+`/graph-explorer?transaction_id=TXN101` loads automatically. Optional `limit=...`
+is also supported. A successful manual search pushes its ID/limit into the URL
+without causing a duplicate fetch. Failed searches leave the last successful
+URL unchanged. Browser Back/Forward loads that URL's network again. Requests
+are aborted on navigation, new searches and unmount; late results are ignored.
+No polling or additional graph pages are requested. Invalid/duplicate URL
+parameters display validation errors without a graph request.
+
+The response's `nodes` and `edges` become Cytoscape `{data: ...}` elements.
+The mapper validates bounds, counts, node types, opaque IDs, root identity and
+edge direction/endpoints, then whitelists safe fields. Unknown node/edge types,
+missing roots, empty synchronized graphs and malformed responses become
+controlled errors rather than fabricated successful networks. Amount/currency
+remain absent if not supplied. Unexpected token properties are discarded;
+card/device labels are derived only from the API's opaque hash IDs. Hashes
+remain pseudonyms: the UI never reconstructs source tokens.
+
+| Visual | Meaning |
+| --- | --- |
+| Blue rounded rectangle | Transaction |
+| Teal circle | Card pseudonym |
+| Purple diamond | Device pseudonym |
+| Navy transaction with teal outline | Requested root transaction |
+| Solid directed edge | Transaction USES_CARD |
+| Dashed directed edge | Transaction USES_DEVICE |
+
+Colors describe entity types, never fraud classifications. A relationship is
+not proof of fraud. The network has no historical cutoff and must not become
+model training/inference features.
+
+Scroll/pinch to zoom, drag the background to pan, and click a node to inspect
+it. Keyboard-accessible buttons also zoom, pan, fit the network and center the
+selected node. The **Select a node** dropdown provides accessible selection of
+every returned node. Details show type, safe label, opaque ID and permitted
+transaction amount/currency. **View transaction** passes an encoded exact ID
+to `/transactions?transaction_id=...`, which opens its existing detail lookup.
+It does not filter the transaction table. Invalid transaction links never fetch
+details. The built-in CoSE layout runs without animation; no editing/dragging
+nodes, graph writes or deletions are enabled. Resize refits the graph; very dense
+networks may require zoom or the dropdown to read individual nodes. Each mounted
+viewer owns one Cytoscape instance and disconnects ResizeObserver/destroys it
+on unmount or graph replacement. See [Cytoscape's API guide](https://js.cytoscape.org/)
+for elements, styles and built-in layouts.
+
+Counts and `truncated` come from the backend:
+
+- `false`: no truncation reported for the currently visible network; this does
+  not prove every SQL transaction reached Neptune.
+- `null`: node limit reached; more nodes may exist. This is explicitly unknown,
+  including a seed-only result at limit 1.
+- `true`: display reported truncation if the backend ever supplies it.
+
+404 means an unknown SQL transaction. 422 means invalid request values.
+`GRAPH_SYNC_PENDING` (503) explains that synchronization is not ready; other
+503 codes distinguish failed sync, unverified/mismatched population, missing
+configuration, invalid networks and temporary dependency outages. Messages are
+static/sanitized, with manual retry; no raw backend errors or payloads are logged.
+The backend's population, SQL acknowledgement and synchronization checks remain
+unchanged. Real Neptune is unverified, so normal successful graph access is not
+claimed. There is no fallback graph in the real application.
+
+## Isolated graph browser fixture
+
+With Vite running, open:
+
+```text
+http://127.0.0.1:5173/tests/fixtures/graph-explorer.html?transaction_id=TEST_101
+```
+
+This clearly labeled frontend-only test page injects synthetic responses into
+the real page/viewer. It makes no API/AWS calls and changes no backend settings.
+Its request counter verifies single deep-link loads and Back/Forward behavior.
+Use `TEST_100_NODES` with limit 100 for the maximum-size fixture; `PENDING`,
+`UNKNOWN` and `UNAVAILABLE` exercise errors; `TEST_SLOW` exercises cancellation.
+Transaction-link navigation on this fixture page shows a test-only handoff,
+not real transaction details. The normal application uses the existing backend
+for those details. Fixtures live only under `tests/fixtures/`, are not imported
+by production code and are not included by `npm run build`.
+
+Verification covers small/100-node networks, root highlighting, canvas and
+dropdown selection, zoom/pan/fit, mobile/tablet containment, URL synchronization,
+Back/Forward, cancellation, errors and null truncation. Real application checks
+use the existing empty database for 404 and validation behavior. These fixtures
+are UI checks, not fraud evidence, performance claims or Neptune verification.

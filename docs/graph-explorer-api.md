@@ -154,7 +154,9 @@ each edge as `{data: {source, target, type}}`. Styling can distinguish node type
 the API's opaque IDs let edges consistently reference the correct shapes.
 Fetch only on demand, handle 503 separately from 404, and explain a null
 truncation flag instead of claiming the whole network is visible. No React
-implementation or dashboard analytics are included in this phase.
+implementation was included in Phase 5.2. Phase 6.3 now consumes this contract
+with a read-only Cytoscape.js viewer; see [the frontend guide](../frontend/README.md)
+for deep links, controls, safe node details and isolated frontend fixtures.
 
 **Authentication/authorization is not implemented. This is a restricted local
 demo endpoint and must not be exposed publicly without access control.**

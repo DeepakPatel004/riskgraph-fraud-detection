@@ -6,10 +6,11 @@ for local input paths, field mapping, synthetic UTC dates and chronological spli
 An internship-focused modular monolith with FastAPI transaction, scoring, alert,
 graph exploration and dashboard APIs, a Neptune adapter, and one pretrained
 XGBoost classifier. Real Neptune deployment and verification remain pending.
-Phase 6.2 adds a SQL-backed Overview dashboard and paginated transaction views
-to the React shell. Graph Explorer and Investigations remain placeholders.
+The React frontend provides a SQL-backed Overview dashboard, paginated
+transactions and a read-only Graph Explorer. Investigations remains a placeholder.
+Normal graph access still requires real Neptune population verification.
 
-## Frontend — Phase 6.2
+## Frontend — Phase 6.3
 
 Use Node.js 20.19+ (20.x) or 22.12+; this phase was verified with Node 24.16.0
 and npm 11.13.0. From the repository root, in one PowerShell terminal:
@@ -34,6 +35,9 @@ Reusable components retain the navy sidebar, teal accents, connection badge,
 and loading/error/empty states. Overview displays four real metric cards and
 three Recharts visualizations. Transactions displays 20 records per page,
 saved risk classifications, UTC times, exact-ID lookup and record details.
+Graph Explorer uses Cytoscape.js with bounded networks, safe node details,
+zoom/pan/select controls and transaction-ID deep links. It never substitutes
+synthetic data for unavailable graph responses.
 See [the frontend guide](frontend/README.md) for contracts and limitations.
 
 Optional configuration: copy `frontend/.env.example` to `frontend/.env.local`.
@@ -64,8 +68,9 @@ The connection badge reflects the last health check, not continuous monitoring.
 Overview loads four dashboard endpoints once on entry, while Transactions loads
 one bounded page. Both provide manual refresh without polling. Navigation aborts
 pending page requests and ignores late responses. Connected means FastAPI and
-SQL are reachable, not that Neptune or the model is ready. No scoring or graph
-queries run automatically. There is no authentication;
+SQL are reachable, not that Neptune or the model is ready. A valid graph deep
+link or explicit Load Graph action requests one bounded network. No scoring
+requests run automatically. There is no authentication;
 keep both servers bound to localhost and use pseudonymized demonstration data.
 The existing graph population and scoring safety checks remain unchanged.
 

@@ -4,11 +4,11 @@ import { PageLayout } from './components/PageLayout.jsx'
 import { EmptyState } from './components/EmptyState.jsx'
 import { LoadingState } from './components/LoadingState.jsx'
 import { Transactions } from './pages/Transactions.jsx'
-import { GraphExplorer } from './pages/GraphExplorer.jsx'
 import { Investigations } from './pages/Investigations.jsx'
 
 // Keep chart code out of the initial transaction/placeholder page bundle.
 const Overview = lazy(() => import('./pages/Overview.jsx').then((module) => ({ default: module.Overview })))
+const GraphExplorer = lazy(() => import('./pages/GraphExplorer.jsx').then((module) => ({ default: module.GraphExplorer })))
 
 export function App() {
   return (
@@ -17,7 +17,7 @@ export function App() {
         <Route element={<PageLayout />}>
           <Route index element={<Suspense fallback={<LoadingState message="Loading dashboard…" />}><Overview /></Suspense>} />
           <Route path="transactions" element={<Transactions />} />
-          <Route path="graph-explorer" element={<GraphExplorer />} />
+          <Route path="graph-explorer" element={<Suspense fallback={<LoadingState message="Loading graph explorer…" />}><GraphExplorer /></Suspense>} />
           <Route path="investigations" element={<Investigations />} />
           <Route path="*" element={
             <section className="panel">
