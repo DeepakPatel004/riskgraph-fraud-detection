@@ -732,3 +732,92 @@ main:focus {
     transition:none
   }
 }
+
+/* Phase 6.2 data views reuse the original workspace palette and spacing. */
+.workspace, main { min-width: 0; }
+.view-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+.view-toolbar h2 { font-size: 26px; font-weight: 600; letter-spacing: -.7px; margin-top: 8px; line-height: 1.3; }
+.view-toolbar p { font-size: 12px; color: #7b899c; margin-top: 8px; }
+.secondary-button, .primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 6px; padding: 9px 12px; font-size: 12px; font-weight: 550; white-space: nowrap; }
+.secondary-button { border: 1px solid #dce3ec; background: white; color: #506780; }
+.secondary-button:hover:not(:disabled) { background: #f0f6f7; border-color: #a8c9c0; }
+.primary-button { border: 1px solid #287d6d; background: #287d6d; color: white; }
+.primary-button:hover:not(:disabled) { background: #206b5e; }
+button:disabled { cursor: not-allowed; }
+.metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.metric-card { padding: 20px; background: white; border: 1px solid #e0e6ee; border-radius: 10px; }
+.metric-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.metric-heading h3 { font-size: 12px; color: #697b91; font-weight: 500; }
+.metric-heading svg { color: #577fa5; }
+.metric-card.teal svg { color: #358d7b; }
+.metric-card.amber svg { color: #b17b3e; }
+.metric-card.purple svg { color: #8872b1; }
+.metric-value { font-size: 30px; letter-spacing: -.8px; font-weight: 600; margin: 12px 0 7px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.metric-note { font-size: 10px; color: #8592a5; line-height: 1.6; }
+.resource-state { padding: 30px 24px; }
+.charts-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.chart-card { min-width: 0; }
+.chart-heading { padding: 22px 24px 16px; }
+.chart-heading h2 { font-size: 14px; font-weight: 600; }
+.chart-heading p { font-size: 11px; color: #8592a5; margin-top: 5px; }
+.chart-canvas { height: 225px; width: 100%; padding: 0 16px 0 4px; }
+.category-canvas { height: 185px; }
+.chart-footnote { font-size: 10px; color: #8592a5; padding: 8px 24px 20px; }
+.category-legend { list-style: none; margin: 12px 24px 20px; padding: 0; display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.category-legend li { display: flex; gap: 6px; align-items: center; color: #6a7c92; font-size: 10px; }
+.category-legend li>span { width: 7px; height: 7px; border-radius: 2px; }
+.category-legend strong { color: #32465e; font-weight: 600; }
+.lookup-form { margin-bottom: 24px; }
+.lookup-form label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+.lookup-form>div { display: flex; gap: 10px; max-width: 560px; }
+.lookup-form input { min-width: 0; flex: 1; padding: 10px 12px; font: inherit; font-size: 12px; color: #202d42; border: 1px solid #d6e0e9; border-radius: 6px; background: white; }
+.lookup-form input:focus-visible { outline: 2px solid #358d7b; outline-offset: 2px; }
+.lookup-form p { margin-top: 8px; color: #7c899b; font-size: 11px; }
+.table-scroll { max-width: 100%; overflow-x: auto; }
+.table-scroll:focus-visible { outline: 2px solid #358d7b; outline-offset: -2px; }
+.transaction-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 11px; white-space: nowrap; }
+.transaction-table thead { background: #f8fafc; color: #718399; }
+.transaction-table th, .transaction-table td { padding: 16px; border-bottom: 1px solid #edf1f6; }
+.transaction-table th { font-weight: 550; }
+.transaction-table tbody tr:hover { background: #fafcfd; }
+.transaction-table tbody td { color: #5f728a; }
+.record-link { color: #327967; font: inherit; font-weight: 600; padding: 0; background: none; border: none; text-align: left; }
+.record-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.number-cell { font-variant-numeric: tabular-nums; }
+.date-cell { font-size: 10px; }
+.risk-badge, .neutral-badge { display: inline-flex; padding: 3px 7px; border-radius: 4px; font-size: 9px; font-weight: 600; letter-spacing: .3px; }
+.risk-low { color: #237965; background: #edf7f2; }
+.risk-high { color: #996020; background: #fff4e6; }
+.risk-unscored, .risk-unknown, .neutral-badge { color: #6b7e95; background: #f0f3f7; }
+.pagination-controls { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 16px 20px; }
+.pagination-controls p { color: #78879b; font-size: 11px; }
+.pagination-controls>div { display: flex; gap: 8px; }
+.detail-panel { padding: 22px 24px; }
+.detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin: 20px 0 24px; }
+.detail-grid dt { font-size: 10px; color: #8290a3; margin-bottom: 5px; }
+.detail-grid dd { font-size: 12px; margin: 0; color: #334b65; overflow-wrap: anywhere; }
+.graph-link { color: #287d6d; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media(max-width:1200px) {
+  .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .view-toolbar { align-items: flex-start; }
+  .view-toolbar h2 { font-size: 23px; }
+}
+@media(max-width:1000px) {
+  .charts-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media(max-width:560px) {
+  .view-toolbar { flex-direction: column; gap: 16px; }
+  .view-toolbar h2 { font-size: 24px; }
+  .metrics-grid { gap: 10px; }
+  .metric-card { padding: 16px 12px; }
+  .metric-heading { gap: 5px; }
+  .metric-heading h3 { font-size: 11px; }
+  .metric-heading svg { width: 15px; }
+  .metric-value { font-size: 26px; }
+  .chart-heading { padding: 20px 18px 16px; }
+  .pagination-controls { align-items: flex-start; flex-direction: column; padding: 16px; }
+  .detail-panel { padding: 20px 18px; }
+  .detail-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+}

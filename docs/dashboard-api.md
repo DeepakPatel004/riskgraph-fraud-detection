@@ -177,14 +177,15 @@ rather than an immediate retry. Errors omit SQL statements, database/credential
 details, stack traces, and rejected query input values. Failed requests do not
 return fabricated zero metrics. Existing endpoint error contracts are unchanged.
 
-## Later frontend use and security
+## Frontend integration and security
 
-React can display summary numbers in cards. Recharts can consume trend `items`
-directly using `date` and `transaction_count`. Risk/status objects can become
-bar or pie series with `Object.entries(counts).map(([name, value]) => ({name, value}))`.
-Display UNSCORED separately; an empty unanchored trend should show “No transaction
-history” rather than suggest a model or graph outage. Refresh after mutations
-when needed; no React implementation is included in this phase.
+Phase 6.2's Overview page displays summary cards, a Recharts UTC activity line,
+and count-based risk/status bar charts. It keeps UNSCORED separate and displays
+“No transaction history” for an empty unanchored trend. Open investigations
+means `open_alerts` (OPEN only, excluding IN_REVIEW). Refresh is manual, without
+polling. Each section handles its own failure; failed calls never become zero
+metrics. See [the frontend guide](../frontend/README.md) for UI behavior and
+the existing transaction APIs used by the transaction table.
 
 **API authentication/authorization is not implemented. These endpoints are for a
 restricted local demo only and must not be exposed publicly without access control.**

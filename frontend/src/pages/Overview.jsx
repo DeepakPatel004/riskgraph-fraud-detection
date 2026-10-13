@@ -1,46 +1,45 @@
-import { ArrowUpRight, Activity } from 'lucide-react'
-import { Link, useOutletContext } from 'react-router-dom'
-import { navigation } from '../navigation.js'
-import { EmptyState } from '../components/EmptyState.jsx'
+import { ArrowLeftRight, CircleCheck, ShieldAlert, FolderOpen, RefreshCw } from 'lucide-react'
+import { api } from '../api/index.js'
+import { useApiResource } from '../hooks/useApiResource.js'
+import { summaryMetrics, categorySeries, trendSeries } from '../utils/presentation.js'
+import { MetricCard } from '../components/MetricCard.jsx'
+import { DashboardChartCard } from '../components/DashboardChartCard.jsx'
+import { ActivityChart, CategoryChart } from '../components/DashboardCharts.jsx'
 import { LoadingState } from '../components/LoadingState.jsx'
 import { ErrorState } from '../components/ErrorState.jsx'
 
-const descriptions = ['Explore transaction records and risk assessments.', 'Follow connections between transactions, cards and devices.', 'Review alerts and organize investigation activity.']
+const loadSummary = async (signal) => summaryMetrics(await api.dashboard.summary({ signal }))
+const loadTrends = async (signal) => trendSeries(await api.dashboard.transactionTrends({}, { signal }))
+const loadRisk = async (signal) => categorySeries(await api.dashboard.riskDistribution({ signal }), ['LOW', 'HIGH', 'UNSCORED'])
+const loadStatus = async (signal) => categorySeries(await api.dashboard.alertStatus({ signal }), ['OPEN', 'IN_REVIEW', 'CLOSED'])
+const icons = [ArrowLeftRight, CircleCheck, ShieldAlert, FolderOpen]
+
 export function Overview() {
-  const { connection, checkConnection } = useOutletContext()
-  return (
-    <>
-      <section className="intro">
-        <span className="eyebrow">CONNECTED CONTEXT. CLEARER DECISIONS.</span>
-        <h2>Your fraud investigation workspace.</h2>
-        <p>A foundation for exploring transaction risk and the relationships behind it.</p>
-      </section>
-      <div className="section-heading"><h2>Explore the workspace</h2><span>Three connected perspectives</span></div>
-      <div className="workspace-cards">
-        {navigation.slice(1).map(({ path, title, icon: Icon }, index) => (
-          <Link className="workspace-card" to={path} key={path}>
-            <div className="card-top">
-              <span className="card-icon"><Icon size={22} aria-hidden="true" /></span>
-              <ArrowUpRight size={18} aria-hidden="true" />
-            </div>
-            <h3>{title}</h3><p>{descriptions[index]}</p>
-            <span className="card-link">View workspace <span aria-hidden="true">→</span></span>
-          </Link>
-        ))}
-      </div>
-      <section className="panel connection-panel" aria-label="Backend connectivity">
-        <div className="section-heading">
-          <h2><Activity size={18} aria-hidden="true" /> Backend connection</h2>
-          <span>Live health check</span>
-        </div>
-        {connection.status === 'checking' ? <LoadingState />
-          : connection.status === 'disconnected' ? <ErrorState message={connection.message} onRetry={checkConnection} />
-            : <p className="connected-message">{connection.message}</p>}
-        <p className="muted-note">Health checks SQL connectivity. It does not verify Neptune, graph freshness, or model readiness.</p>
-      </section>
-      <section className="panel">
-        <EmptyState title="The foundation is ready" description="Analytics and data views will arrive in later phases. No dashboard metrics or transaction data are loaded here yet." />
-      </section>
-    </>
-  )
+  const summary = useApiResource(loadSummary)
+  const trends = useApiResource(loadTrends)
+  const risk = useApiResource(loadRisk)
+  const status = useApiResource(loadStatus)
+  const resources = [summary, trends, risk, status]
+  const loading = resources.some((item) => item.status === 'loading')
+  return <>
+    <section className="view-toolbar">
+      <div><span className="eyebrow">TRANSACTION INTELLIGENCE</span><h2>A clearer view of transaction risk.</h2><p>Saved SQL records · No live model inference or graph queries</p></div>
+      <button className="secondary-button" disabled={loading} onClick={() => resources.forEach((item) => item.refresh())}><RefreshCw size={15} aria-hidden="true" />Refresh dashboard</button>
+    </section>
+    {summary.status === 'loading' ? <div className="panel resource-state"><LoadingState message="Loading dashboard metrics…" /></div>
+      : summary.status === 'error' ? <div className="panel resource-state"><ErrorState message={summary.error} onRetry={summary.refresh} retryLabel="Retry metrics" /></div>
+        : <div className="metrics-grid">{summary.data.map((item, index) => <MetricCard key={item.name} {...item} icon={icons[index]} />)}</div>}
+    <DashboardChartCard title="Transaction activity" subtitle="Daily transaction volume · Latest stored event window" resource={trends} empty={!trends.data?.length} emptyText="No transaction history">
+      {trends.data?.length > 0 && <ActivityChart data={trends.data} />}
+    </DashboardChartCard>
+    <div className="charts-grid">
+      <DashboardChartCard title="Risk distribution" subtitle="Saved classifications · All transactions" resource={risk} empty={!risk.data?.some((item) => item.count > 0)} emptyText="No transactions to classify">
+        {risk.data && <CategoryChart data={risk.data} />}
+      </DashboardChartCard>
+      <DashboardChartCard title="Investigation status" subtitle="Existing alerts · All investigation statuses" resource={status} empty={!status.data?.some((item) => item.count > 0)} emptyText="No investigation alerts">
+        {status.data && <CategoryChart data={status.data} />}
+      </DashboardChartCard>
+    </div>
+    <p className="page-note">HIGH flags a saved assessment for review; it is not proof of fraud. LOW is not proof of legitimacy. UNSCORED means no score is saved. Separate dashboard requests may observe different database states.</p>
+  </>
 }

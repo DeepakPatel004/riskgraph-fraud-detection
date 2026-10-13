@@ -6,10 +6,10 @@ for local input paths, field mapping, synthetic UTC dates and chronological spli
 An internship-focused modular monolith with FastAPI transaction, scoring, alert,
 graph exploration and dashboard APIs, a Neptune adapter, and one pretrained
 XGBoost classifier. Real Neptune deployment and verification remain pending.
-Phase 6.1 adds a React application shell and reusable API integration; its four
-pages are placeholders, not completed data views.
+Phase 6.2 adds a SQL-backed Overview dashboard and paginated transaction views
+to the React shell. Graph Explorer and Investigations remain placeholders.
 
-## Frontend — Phase 6.1
+## Frontend — Phase 6.2
 
 Use Node.js 20.19+ (20.x) or 22.12+; this phase was verified with Node 24.16.0
 and npm 11.13.0. From the repository root, in one PowerShell terminal:
@@ -30,8 +30,11 @@ npm run dev
 
 Open http://127.0.0.1:5173. Routes are `/`, `/transactions`, `/graph-explorer`,
 and `/investigations`. React Router switches pages inside a shared layout.
-Reusable components hold the sidebar, header, connection badge and loading,
-error and empty states. No charts, tables or investigation workflows exist yet.
+Reusable components retain the navy sidebar, teal accents, connection badge,
+and loading/error/empty states. Overview displays four real metric cards and
+three Recharts visualizations. Transactions displays 20 records per page,
+saved risk classifications, UTC times, exact-ID lookup and record details.
+See [the frontend guide](frontend/README.md) for contracts and limitations.
 
 Optional configuration: copy `frontend/.env.example` to `frontend/.env.local`.
 
@@ -54,12 +57,15 @@ It preserves decimal strings, pagination envelopes and nullable graph metadata.
 `ApiError` exposes `status`, `code`, `retryable`, `retryAfter` and validation
 messages, supporting both structured errors and legacy `detail` responses.
 The UI never displays raw backend error bodies. Write helpers are available
-for future explicit actions but are not called by these placeholder pages.
+for future explicit actions but are not called by these read-only pages.
 
-Only `/health` is requested on app startup. Client-side navigation does not
-repeat it; the refresh button manually checks again. Connected means FastAPI
-and SQL are reachable, not that Neptune or the model is ready. No scoring,
-graph or dashboard requests run automatically. There is no authentication;
+The shared layout checks `/health` once; its refresh button manually checks again.
+The connection badge reflects the last health check, not continuous monitoring.
+Overview loads four dashboard endpoints once on entry, while Transactions loads
+one bounded page. Both provide manual refresh without polling. Navigation aborts
+pending page requests and ignores late responses. Connected means FastAPI and
+SQL are reachable, not that Neptune or the model is ready. No scoring or graph
+queries run automatically. There is no authentication;
 keep both servers bound to localhost and use pseudonymized demonstration data.
 The existing graph population and scoring safety checks remain unchanged.
 
