@@ -1,9 +1,9 @@
-# RiskGraph frontend — Phase 6.3
+# RiskGraph frontend — Phase 6.4
 
 React components are reusable screen pieces. The Overview and Transactions
 pages share the Phase 6.1 layout, native Fetch client and local Vite proxy.
-Graph Explorer now provides read-only Cytoscape.js networks. Investigations
-remains a placeholder.
+Graph Explorer provides read-only Cytoscape.js networks. Investigations now
+supports paginated alert review and server-confirmed investigation status updates.
 
 ## Start and verify
 
@@ -95,9 +95,9 @@ also verified through the same backend using a separate temporary database with
 production data or model performance claims. The application database is untouched.
 
 There is no authentication. Keep this a localhost-only demo. No creation,
-scoring, alert updates, AWS calls, model loading or safety bypasses occur in these
-views. Real Neptune verification, investigation workflows and deployment remain
-outside this phase.
+scoring, AWS calls, model loading or safety bypasses occur in these views.
+Investigation status changes use the existing alert PATCH endpoint only.
+Real Neptune verification and deployment remain outside this phase.
 
 ## Graph Explorer — Phase 6.3
 
@@ -194,3 +194,101 @@ dropdown selection, zoom/pan/fit, mobile/tablet containment, URL synchronization
 Back/Forward, cancellation, errors and null truncation. Real application checks
 use the existing empty database for 404 and validation behavior. These fixtures
 are UI checks, not fraud evidence, performance claims or Neptune verification.
+
+## Investigations — Phase 6.4
+
+Open `/investigations` to review SQL alerts. The table requests 20 records at a
+time, shows the matching total, and uses server-side filters ALL, OPEN,
+IN_REVIEW and CLOSED. ALL omits the backend filter. Changing filters resets the
+page offset. Next/Previous preserve the filter and selected alert; a removed
+last-page record causes the view to return to the last available page.
+
+| Existing endpoint | Purpose |
+| --- | --- |
+| `GET /api/v1/alerts?limit=20&offset=0` | Paginated list, optional `investigation_status` |
+| `GET /api/v1/alerts/{alert_id}` | Selected alert details |
+| `PATCH /api/v1/alerts/{alert_id}` | Set only `investigation_status` |
+
+The list shows alert/transaction IDs, saved 0–1 risk score, status and UTC creation
+time. Details add updated time and saved factual indicators. Known codes map to
+the backend's five historical observations. These are not causal explanations,
+proof of fraud or a new model assessment. Empty indicators show an explicit
+empty state. Unrecognized legacy indicator strings are counted but withheld;
+they may contain sensitive text and require a reviewed mapping before display.
+Arbitrary extra properties, tokens and model internals never enter alert view
+state. React renders plain text, never backend HTML.
+
+Status meanings:
+
+- OPEN: awaiting human review.
+- IN_REVIEW: currently being examined.
+- CLOSED: review finished; this does not mean fraud was confirmed.
+
+Choose a different status and press **Update status**. CLOSED first presents an
+inline confirmation with **Confirm close** and **Cancel closing**. No PATCH is
+sent before confirmation. Reopening CLOSED alerts needs no extra approval.
+The current status is a disabled no-op. Pending updates disable status controls,
+row selection, filters, pagination and refresh to avoid conflicting actions.
+There are no optimistic writes or automatic PATCH retries. Only a server-confirmed
+response produces a success message; GET detail/list then refresh independently.
+If the updated alert no longer matches the current filter, its details remain
+visible with an explanatory note, while the list total updates. Dashboard
+sections have no shared cache and reload SQL aggregates on the next Overview visit.
+
+A failed update leaves the previous confirmed state visible. A network timeout,
+connection failure or invalid success response cannot prove rollback: the server
+may already have committed. The UI explicitly says the outcome is unconfirmed
+and asks for refresh before retrying. Refresh clears that notice and reads the
+server state. Navigating away aborts the browser request but cannot undo a server
+commit. Backend concurrency is last-write-wins; no audit trail or optimistic
+version checking is provided. No status action changes scores, indicators,
+transactions, graph jobs or Neptune state.
+
+Deep links support, for example:
+
+```text
+/investigations?alert_id=b3824b76-761c-42e3-a533-7307b104855b&investigation_status=OPEN&offset=20
+```
+
+Query parameters are validated (one alert ID using 1–36 letters, digits,
+underscores/hyphens; a supported status; a safe nonnegative integer offset).
+Invalid links show a reset control and make no alert requests. Selecting an
+alert pushes a URL; Back/Forward restores selection/filter/page. Selection does
+not reload an unchanged list. Unchanged selected IDs do not reload on pagination
+or filter changes. Pending reads are cancelled and late completions ignored.
+404 alerts, validation failures, 503, timeouts and unexpected failures produce
+sanitized messages with manual refresh/retry. No successful records or updates
+are fabricated. **View transaction** and **Open Graph Explorer** reuse safe
+encoded transaction-ID query links; Graph Explorer behavior and safety checks
+are unchanged.
+
+The table scrolls horizontally on narrow screens. Detail panels stack on mobile
+and receive focus when another alert is selected. Inputs, filters, confirmation,
+status controls, pagination and links support keyboard access. Status messages
+announce progress, errors and confirmed saves. No dependencies were added.
+
+### Isolated investigation fixture
+
+With Vite running, open:
+
+```text
+http://127.0.0.1:5173/tests/fixtures/investigations.html?alert_id=ALERT_002
+```
+
+This clearly labeled test page stores 45 synthetic alerts in memory. Updates
+change only those records; no backend, database, model, graph or AWS call occurs.
+The request counter helps check duplicate loads. Use `ALERT_FAIL` for a failed
+write, `ALERT_UNCERTAIN` for a simulated committed-but-timed-out write,
+`ALERT_SLOW` for stale-read cancellation, and `ALERT_UNKNOWN` for 404.
+Add `fixture_empty=1` on initial load for an empty store. Reloading the fixture
+resets its records. Transaction/graph links show test-only navigation handoffs.
+Fixture modules are not included in the production build. The real application
+always calls the existing APIs; it has no fixture fallback.
+
+Verification covers filtering, bounded pagination, deep links/history, empty and
+unknown alerts, stale read cancellation, close/cancel/reopen, pending control
+locking, failed writes, timeout reconciliation, safe links and responsive layout.
+Normal application checks use read-only requests against the existing empty
+SQLite database; all writes are isolated to frontend fixtures. Authentication,
+shared/public deployment, operator audit history and real Neptune verification
+remain pending. Do not expose these endpoints or this UI publicly.

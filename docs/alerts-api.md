@@ -109,9 +109,11 @@ features, model objects or SQL. Existing transaction endpoints have their own
 contracts and still need deployment access restrictions. Keep payment tokens and
 credentials out of alert indicator strings and operational logs.
 
-A later frontend can load the paginated collection, open an alert by its ID,
-and PATCH a new status, then refresh the displayed list/detail. A PATCH returns
-the saved state. Concurrent operator updates use last-write-wins; there is no
+Phase 6.4's Investigations UI loads the paginated collection, opens alerts by ID,
+and PATCHes a new status after explicit confirmation for CLOSED, then refreshes
+list/detail. See [the frontend guide](../frontend/README.md) for deep links,
+privacy filtering and uncertain-write handling. A PATCH returns the saved state.
+Concurrent operator updates use last-write-wins; there is no
 optimistic version check or operator change history yet. Investigation updates
 use SQL only and do not call the model, Neptune, or graph synchronization jobs.
 

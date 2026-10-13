@@ -7,10 +7,11 @@ An internship-focused modular monolith with FastAPI transaction, scoring, alert,
 graph exploration and dashboard APIs, a Neptune adapter, and one pretrained
 XGBoost classifier. Real Neptune deployment and verification remain pending.
 The React frontend provides a SQL-backed Overview dashboard, paginated
-transactions and a read-only Graph Explorer. Investigations remains a placeholder.
+transactions, a read-only Graph Explorer and an investigation interface for
+reviewing alerts and updating their status.
 Normal graph access still requires real Neptune population verification.
 
-## Frontend — Phase 6.3
+## Frontend — Phase 6.4
 
 Use Node.js 20.19+ (20.x) or 22.12+; this phase was verified with Node 24.16.0
 and npm 11.13.0. From the repository root, in one PowerShell terminal:
@@ -38,6 +39,13 @@ saved risk classifications, UTC times, exact-ID lookup and record details.
 Graph Explorer uses Cytoscape.js with bounded networks, safe node details,
 zoom/pan/select controls and transaction-ID deep links. It never substitutes
 synthetic data for unavailable graph responses.
+
+Investigations lists alerts with ALL/OPEN/IN_REVIEW/CLOSED filters and bounded
+pagination. Selected details show saved scores and historical indicators.
+Closing requires confirmation; reopening is supported. Status updates are
+server-confirmed, refresh the filtered list/detail, and never change model scores.
+Deep links preserve selected alerts, filters and pagination. See the frontend
+guide for uncertain-write handling and restricted local-demo limitations.
 See [the frontend guide](frontend/README.md) for contracts and limitations.
 
 Optional configuration: copy `frontend/.env.example` to `frontend/.env.local`.
