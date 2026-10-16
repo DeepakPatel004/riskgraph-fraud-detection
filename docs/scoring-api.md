@@ -292,3 +292,67 @@ docs/fraud-scoring.md
 docs/phase-4-inference-contract.md
 docs/scoring-api.md
 ```
+
+## Local backend development
+
+From the repository root, create a local environment and initialize a fresh
+SQLite database explicitly:
+
+```powershell
+cd backend
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m scripts.init_db
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+On Linux/macOS, activate with `source .venv/bin/activate`. The Docker runtime uses
+Python 3.14; the pinned ML environment was verified with CPython 3.14.5 on Windows.
+For the full pytest suite, install `requirements-ml.txt` in the same development
+environment. `requirements-neptune.txt` is optional for real IAM-authenticated
+Neptune requests; ordinary tests use fake graph/signing dependencies. No real
+model bundle or dataset is needed for ordinary unit tests.
+
+Interactive API documentation is at http://127.0.0.1:8000/docs when running this
+local server. Keep one API worker. Existing database upgrades require the additive
+migration procedures in [Docker setup](docker-setup.md), rather than assuming
+`create_all()` updates existing tables. PostgreSQL remains a future integration
+verification target; changing `DATABASE_URL` alone does not establish safe scoring.
+
+## Unscored transaction ingestion and UTC handling
+
+`POST /api/v1/transactions` creates a transaction with null risk fields and one
+outbox job. `GET /api/v1/transactions` returns a bounded page, ordered by descending
+UTC event time and transaction ID; `GET /api/v1/transactions/{transaction_id}`
+returns an exact match. Example unscored input using synthetic tokens:
+
+```json
+{
+  "transaction_id": "TXN1045",
+  "amount": "15000.50",
+  "currency": "INR",
+  "card_token": "TOKEN_CARD_22",
+  "device_token": "TOKEN_DEVICE_11",
+  "event_time": "2026-10-10T10:30:00Z"
+}
+```
+
+An optional `Idempotency-Key` identifies retries. First creation returns 201;
+matching retries return 200 and the existing record. Different data with the same
+key or a duplicate ID returns 409; validation errors return 422 and missing IDs
+return 404. The initial RECEIVED/PENDING statuses do not mean a worker is running.
+The unscored currency field accepts three uppercase letters and defaults to INR;
+this is separate from the scoring endpoint's strict USD compatibility policy.
+
+Timestamps require an offset or `Z` and are normalized before persistence and
+idempotency hashing. For example, `2026-10-10T10:30:00+05:30` becomes
+`2026-10-10T05:00:00Z`. `UTCDateTime` stores UTC clock values in SQLite's DATETIME
+format and restores an aware UTC datetime on retrieval. PostgreSQL uses
+TIMESTAMP WITH TIME ZONE; results are normalized to UTC. System-generated values
+use `datetime.now(timezone.utc)`.
+
+Legacy naive database timestamps are assumed to represent UTC. An offset lost by
+older code cannot be reconstructed. Existing idempotency hashes are not rewritten;
+a historical hash based on a non-UTC representation may conflict after
+normalization. This compatibility policy requires no timestamp schema rewrite.

@@ -138,3 +138,18 @@ Pending real integration checks:
 - [Why IDs help prevent duplicates](https://docs.aws.amazon.com/neptune/latest/userguide/best-practices-content-15.html)
 - [Python IAM authentication](https://docs.aws.amazon.com/neptune/latest/userguide/iam-auth-connecting-python.html)
 - [Neptune query rewrites and unsupported FOREACH](https://docs.aws.amazon.com/neptune/latest/userguide/migration-opencypher-rewrites.html)
+
+## In-memory reference adapter
+
+`InMemoryGraphRepository` implements the same synchronous `GraphRepository`
+Protocol for tests and small local fixtures. It scans local history and loses all
+nodes on restart; it is intended for serialized use, not durable graph storage.
+Repeated upserts replace a transaction by ID, deduplicate edges and replace old
+card/device connections when tokens change. Missing devices create no device node.
+
+Network retrieval traverses both directions with deterministic breadth-first
+ordering. The node limit includes the root; only relationships between returned
+nodes are included, and unknown roots return an empty network. Investigation
+networks have no historical cutoff and must not be passed to model feature input.
+The historical feature methods enforce their separate UTC windows and reject
+mixed-currency card averages instead of performing implicit currency conversion.

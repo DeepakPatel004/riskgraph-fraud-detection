@@ -1,19 +1,197 @@
-# RiskGraph — Fraud Detection & Investigation Platform
+# RiskGraph — Graph-Based Fraud Detection & Investigation Platform
 
-Offline ML data preparation: see [Phase 3.1 IEEE-CIS guide](ml_training/README.md)
-for local input paths, field mapping, synthetic UTC dates and chronological splits.
+RiskGraph combines transaction APIs, historical graph features and a saved XGBoost
+classifier with an investigation interface. A FastAPI modular monolith manages
+SQL records and graph synchronization; React provides transaction review,
+analytics and bounded transaction–card–device network exploration.
 
-An internship-focused modular monolith with FastAPI transaction, scoring, alert,
-graph exploration and dashboard APIs, a Neptune adapter, and one pretrained
-XGBoost classifier. Real Neptune deployment and verification remain pending.
-The React frontend provides a SQL-backed Overview dashboard, paginated
-transactions, a read-only Graph Explorer and an investigation interface for
-reviewing alerts and updating their status.
-Normal graph access still requires real Neptune population verification.
+## Overview
 
-## Local Docker setup — Phase 7.1
+A transaction's amount alone cannot show whether its card or device has appeared
+in other activity. Shared card and device relationships give reviewers context
+across transactions, while historical counts and associations provide inputs to
+risk scoring. Connections are investigative evidence to examine, not proof of fraud.
 
-With Docker Desktop running Linux containers, run from the repository root:
+SQL is the source of truth for accepted transactions, predictions, alerts and
+synchronization state. Graph updates are delivered separately through a durable
+outbox. Scoring requires verified, strictly earlier graph history before a new
+prediction can be saved.
+
+**Status:** React, FastAPI and Docker Compose are locally verified. The Amazon
+Neptune adapter is implemented, but live connectivity and graph population
+verification are pending. Public cloud deployment and authentication are not complete.
+
+## Key Features
+
+- **Transaction ingestion:** validated amounts, UTC timestamps, optional
+  idempotency keys, conflict detection and paginated retrieval.
+- **Graph-aware scoring:** one pretrained XGBoost classifier, saved preprocessing,
+  a validation-selected threshold, and consistent HIGH/LOW classifications.
+- **Transactional outbox:** transaction and synchronization job commit together;
+  a separately started worker uses leases, bounded retries and idempotent graph writes.
+- **Graph exploration:** bounded networks of transactions, pseudonymous cards and
+  optional devices, with safe node details and synchronization readiness checks.
+- **Alerts and investigations:** HIGH results create an OPEN alert atomically;
+  reviewers can inspect saved signals and move alerts through OPEN, IN_REVIEW and CLOSED.
+- **Analytics dashboard:** SQL-backed counts, UTC transaction trends, saved risk
+  distributions and investigation status charts.
+- **Local containers:** non-root FastAPI and Nginx services, health checks,
+  persistent SQLite storage and an optional read-only model mount.
+
+## System Architecture
+
+The API and worker share the same backend modules. The worker is a separate
+process from the modular monolith's codebase, with no message broker or separate
+model server. Solid arrows below show request/data access; dashed arrows show
+outbox processing performed outside the HTTP request.
+
+```mermaid
+flowchart TB
+    subgraph Client["Browser"]
+        UI["React frontend"]
+    end
+    subgraph Local["Local Docker Compose"]
+        Proxy["Nginx: static assets and reverse proxy"]
+        subgraph Backend["FastAPI modular monolith"]
+            API["Transaction and investigation APIs"]
+            Analytics["Dashboard analytics APIs"]
+            Score["Scoring and graph readiness checks"]
+            History["Historical graph feature retrieval"]
+            Model["Cached XGBoost inference and saved preprocessing"]
+            ORM["SQLAlchemy"]
+        end
+        SQL[("SQLite: transactions, alerts, idempotency and outbox")]
+    end
+    subgraph Integration["Implemented graph integration - not started by Compose"]
+        Worker["Graph synchronization worker"]
+        Adapter["Neptune openCypher adapter"]
+        Neptune[("Amazon Neptune Database: integration implemented; live verification pending")]
+    end
+    UI -->|HTTP API requests| Proxy
+    Proxy -->|Serve built assets| UI
+    Proxy --> API
+    Proxy --> Analytics
+    API --> ORM
+    Analytics --> ORM
+    ORM --> SQL
+    API -->|Scored submissions only| Score
+    Score -->|Verify relevant SQL sync state| ORM
+    Score --> History
+    History --> Adapter
+    Score --> Model
+    API -->|Network exploration| Adapter
+    Worker -.->|Claim jobs and record completion| SQL
+    Worker -.->|Upsert committed transactions| Adapter
+    Adapter -->|HTTPS openCypher| Neptune
+```
+
+Only Nginx publishes a host port, bound to `127.0.0.1`. The default Compose setup
+starts neither the graph worker nor Neptune, and keeps scoring disabled.
+The optional model bundle is mounted from local storage; it is never baked into
+an image. PostgreSQL support is present in the persistence layer, with live
+integration still to be verified.
+
+## Fraud Detection Workflow
+
+The API supports two creation paths. Unscored ingestion accepts records without
+calling the graph or model. Scored ingestion evaluates a **new** transaction
+against prior synchronized history, then saves the result. It does not upgrade
+an already-ingested transaction ID into a scored transaction.
+
+```mermaid
+flowchart TD
+    Request["Transaction request"] --> Validate["Validate input and acquire ingestion gate"]
+    Validate --> Replay{"Matching idempotent retry?"}
+    Replay -->|Yes| Saved["Return existing SQL record or saved prediction"]
+    Replay -->|No| Route{"Creation route"}
+    Route -->|Unscored ingestion| Plain["Atomic SQL commit: transaction, outbox, optional idempotency record"]
+    Route -->|Scored ingestion| Ready{"Verified population and complete prior history?"}
+    Ready -->|No| Unavailable["503 unavailable: no fabricated score"]
+    Ready -->|Yes| Features["Retrieve strictly earlier historical graph features"]
+    Features --> Infer["Saved preprocessing and XGBoost inference"]
+    Infer --> Persist["Atomic SQL commit: score, classification, outbox, optional idempotency and HIGH alert"]
+    Plain -.-> Worker["Separately started worker: claim, upsert graph, record completion"]
+    Persist -.-> Worker
+    Worker -.->|Prior events must synchronize before later scoring| Ready
+    Persist -->|HIGH result creates OPEN alert| Review["Analyst reviews saved alert and graph context"]
+    Review --> Status["Update investigation status"]
+```
+
+- Duplicate IDs, conflicting keys and rejected late events return 409. Matching
+  scored retries return saved results without repeating inference.
+- Graph features use UTC windows `[event_time - window, event_time)`: the lower
+  boundary is inclusive; current, exact-time and future events are excluded.
+- SQL persistence is atomic; graph delivery is asynchronous and uses bounded
+  at-least-once retries. A graph write may be repeated after an uncertain outcome.
+- HIGH means `risk_score >= saved threshold`; LOW means below it. Neither is a
+  verified fraud outcome. Descriptive risk indicators do not explain the model's trees.
+- The current scoring policy requires one API worker on one host with local
+  file-backed SQLite, a verified graph population and complete relevant history.
+
+This diagram describes implemented behavior when dependencies are verified and
+explicitly enabled. The local Docker setup does not automatically run this full flow.
+
+## Machine Learning
+
+One XGBoost binary classifier was trained on **590,540 IEEE-CIS transactions**.
+Chronological partitions contain 413,378 training, 88,581 validation and 88,581
+test rows. Equal-time events stay together, and historical state continues across
+partition boundaries without using future events or fraud labels as features.
+
+The 17 inputs are transaction amount, ProductCD, M1–M9, `device_missing`, and:
+
+- `card_txn_count_24h`
+- `device_txn_count_24h`
+- `card_unique_devices_7d`
+- `device_unique_cards_7d`
+- `card_avg_amount_7d`
+
+Imputation and categorical encoding are fitted on training data only and reused
+at inference. The validation partition selects the classification threshold;
+the final test partition is evaluated after that threshold is fixed.
+
+The saved evaluation records report:
+
+| Test metric | Value |
+| --- | ---: |
+| ROC-AUC | 0.8044 |
+| PR-AUC, reported as Average Precision | 0.1572 |
+| Precision | 0.1888 |
+| Recall | 0.3581 |
+| F1 | 0.2472 |
+| Saved classification threshold | 0.761772 |
+
+These are offline results on one chronological split, not external validation or
+measured business impact. Card/device tokens are approximate fingerprints of
+anonymized attributes; they can merge unrelated identities or split one identity.
+Missing device information limits graph coverage. Dataset timestamps use a
+synthetic UTC reference, and inference currently enforces the prototype USD policy.
+
+The backend loads the saved model and preprocessing once per process through a
+cached predictor. Model binaries, raw/prepared datasets and generated evaluation
+files are intentionally excluded from Git. The metrics above were checked against
+the existing local bundle; cloning the repository does not download that bundle.
+See the [classifier guide](ml_training/CLASSIFIER.md) and
+[historical feature documentation](ml_training/GRAPH_FEATURES.md) for details.
+
+## Tech Stack
+
+| Technology | Responsibility |
+| --- | --- |
+| Python, FastAPI, Pydantic | HTTP APIs, validation and service orchestration |
+| SQLAlchemy, SQLite | Local transactional persistence, idempotency and outbox |
+| PostgreSQL / psycopg | Configurable persistence target; live verification pending |
+| Amazon Neptune, openCypher | Graph adapter for relationships, traversal and history |
+| XGBoost, scikit-learn | One classifier and saved preprocessing pipeline |
+| React, Vite, React Router | Browser application and navigation |
+| Recharts, Cytoscape.js | Analytics charts and interactive graph visualization |
+| Docker Compose, Nginx | Local containers, static assets and API reverse proxy |
+| pytest, Node test runner | Backend and frontend automated tests |
+
+## Local Quick Start
+
+Install Docker Desktop with Linux containers enabled, then run from the
+repository root:
 
 ```powershell
 docker compose build
@@ -21,281 +199,114 @@ docker compose run --rm --no-deps backend python -m scripts.init_db
 docker compose up -d --wait
 ```
 
-Open http://127.0.0.1:8080. This uses a **separate named-volume SQLite database**;
-the existing host database is untouched. Stop with `docker compose down`;
-do not add `-v`, which would remove the database volume.
-Neptune, scoring and the graph worker remain disabled. Model artifacts are
-optional and never baked into images. See [the Docker guide](docs/docker-setup.md)
-for read-only model mounts, migrations, troubleshooting and local limitations.
+Open **http://127.0.0.1:8080**. A fresh database displays empty dashboard,
+transaction and investigation views. Health is available at
+http://127.0.0.1:8080/health; it checks SQL connectivity, not graph/model readiness.
 
-## Running the frontend without Docker
+```powershell
+docker compose logs --tail 100 backend frontend
+docker compose down
+```
 
-Use Node.js 20.19+ (20.x) or 22.12+; this phase was verified with Node 24.16.0
-and npm 11.13.0. From the repository root, in one PowerShell terminal:
+SQLite uses a persistent named Docker volume, separate from the host database.
+Initialization creates missing tables explicitly; restarts do not reset data.
+**Do not use `docker compose down -v` casually: it removes the database volume.**
+
+Ordinary API and dashboard use does not require a model bundle. Graph exploration
+and new scoring requests remain gated until Neptune population verification.
+Keep this unauthenticated setup local and use pseudonymous demonstration data.
+See [Docker setup](docs/docker-setup.md) for optional read-only model mounts,
+configuration, additive migrations and troubleshooting, or the
+[frontend guide](frontend/README.md) for running the development servers directly.
+
+## Backend API Overview
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health` | SQL connectivity check |
+| `POST /api/v1/transactions` | Create an unscored transaction and outbox job |
+| `GET /api/v1/transactions` | Paginated transaction records |
+| `GET /api/v1/transactions/{transaction_id}` | Retrieve one saved transaction |
+| `POST /api/v1/transactions/score` | Score and atomically save a new USD transaction, subject to readiness checks |
+| `GET /api/v1/transactions/{transaction_id}/graph` | Bounded network for a synchronized transaction |
+| `GET /api/v1/alerts` and `GET /api/v1/alerts/{alert_id}` | List and inspect saved alerts |
+| `PATCH /api/v1/alerts/{alert_id}` | Update investigation status |
+| `GET /api/v1/dashboard/*` | Summary, risk distribution, transaction trends and alert status |
+
+Creation routes accept an optional `Idempotency-Key` header. Detailed request,
+response and failure contracts are in the [scoring API guide](docs/scoring-api.md),
+[alert API guide](docs/alerts-api.md) and [dashboard API guide](docs/dashboard-api.md).
+
+## Testing
+
+The latest verified application checks completed locally:
+
+| Check | Result |
+| --- | --- |
+| Backend pytest suite | 553 passed |
+| Frontend Node test suite | 58 passed |
+| Frontend production build | Passed |
+| Docker images and Compose startup | Verified locally |
+| SQLite persistence after container restart/replacement | Verified locally |
+
+Backend tests use temporary databases and fake graph dependencies; frontend tests
+use synthetic fixtures and fake HTTP responses. They require no AWS access.
+The full backend suite also needs the existing optional ML dependencies;
+see [backend development notes](docs/scoring-api.md#local-backend-development).
+From an already configured development environment:
 
 ```powershell
 cd backend
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-Use the existing backend environment and database. For a fresh backend setup,
-follow the installation instructions below. In a second terminal:
-
-```powershell
-cd frontend
-npm ci
-npm run dev
-```
-
-Open http://127.0.0.1:5173. Routes are `/`, `/transactions`, `/graph-explorer`,
-and `/investigations`. React Router switches pages inside a shared layout.
-Reusable components retain the navy sidebar, teal accents, connection badge,
-and loading/error/empty states. Overview displays four real metric cards and
-three Recharts visualizations. Transactions displays 20 records per page,
-saved risk classifications, UTC times, exact-ID lookup and record details.
-Graph Explorer uses Cytoscape.js with bounded networks, safe node details,
-zoom/pan/select controls and transaction-ID deep links. It never substitutes
-synthetic data for unavailable graph responses.
-
-Investigations lists alerts with ALL/OPEN/IN_REVIEW/CLOSED filters and bounded
-pagination. Selected details show saved scores and historical indicators.
-Closing requires confirmation; reopening is supported. Status updates are
-server-confirmed, refresh the filtered list/detail, and never change model scores.
-Deep links preserve selected alerts, filters and pagination. See the frontend
-guide for uncertain-write handling and restricted local-demo limitations.
-See [the frontend guide](frontend/README.md) for contracts and limitations.
-
-Optional configuration: copy `frontend/.env.example` to `frontend/.env.local`.
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `VITE_API_BASE_URL` | `/backend` | Public API base URL used by the browser |
-| `VITE_API_TIMEOUT_MS` | `8000` | Request timeout, integer 1–60000 milliseconds |
-| `DEV_API_TARGET` | `http://127.0.0.1:8000` | Server-side local Vite proxy target |
-
-The Vite development proxy forwards `/backend/health` to FastAPI `/health`,
-and likewise forwards `/backend/api/v1/...`. This avoids changing backend CORS.
-Restart Vite after changing environment settings. `VITE_` variables are public
-in the browser bundle: never put credentials or secrets in them. An absolute
-API URL requires that backend to explicitly allow the frontend origin.
-
-`src/api/client.js` centralizes native Fetch, timeout/cancellation, JSON,
-encoded query parameters and sanitized errors. `src/api/endpoints.js` provides
-dashboard, transaction, alert and graph helpers matching the backend contracts.
-It preserves decimal strings, pagination envelopes and nullable graph metadata.
-`ApiError` exposes `status`, `code`, `retryable`, `retryAfter` and validation
-messages, supporting both structured errors and legacy `detail` responses.
-The UI never displays raw backend error bodies. Write helpers are available
-for future explicit actions but are not called by these read-only pages.
-
-The shared layout checks `/health` once; its refresh button manually checks again.
-The connection badge reflects the last health check, not continuous monitoring.
-Overview loads four dashboard endpoints once on entry, while Transactions loads
-one bounded page. Both provide manual refresh without polling. Navigation aborts
-pending page requests and ignores late responses. Connected means FastAPI and
-SQL are reachable, not that Neptune or the model is ready. A valid graph deep
-link or explicit Load Graph action requests one bounded network. No scoring
-requests run automatically. There is no authentication;
-keep both servers bound to localhost and use pseudonymized demonstration data.
-The existing graph population and scoring safety checks remain unchanged.
-
-Verification commands from `frontend/`:
-
-```powershell
+python -m pytest -q -p no:cacheprovider
+cd ../frontend
 npm test
 npm run build
-npm run preview
 ```
 
-Tests use Node's built-in test runner and fake Fetch responses, with no added
-test framework or AWS access. Preview opens at http://127.0.0.1:4173 and includes
-the same **local-only** proxy. A production static host does not run Vite's
-proxy: it needs an explicitly configured API reverse proxy and SPA route
-fallback, plus authentication/access controls before public deployment.
+GitHub Actions CI is not configured. Offline Neptune tests verify adapter
+contracts and error handling, not query execution against a live Neptune engine.
 
-Troubleshooting:
+## Current Status and Limitations
 
-- **Disconnected:** check http://127.0.0.1:8000/health, the backend terminal,
-  and `DEV_API_TARGET`, then use the refresh button. The frontend remains usable
-  while the backend is unavailable.
-- **Port already in use:** stop your own previous development server or set a
-  different port with `npm run dev -- --port 5174`. Vite fails clearly rather
-  than silently moving to another port.
-- **Configuration error or timeout:** check the URL and timeout above; restart
-  Vite after edits. Do not paste credentials into URLs.
-- **Direct URL fails on a static host:** configure SPA fallback to `index.html`.
-  Local Vite development and preview support direct route navigation already.
+- React and FastAPI are implemented and locally tested; Docker Compose is locally verified.
+- Neptune integration is coded, but actual connectivity, query execution and graph population remain unverified.
+- Live graph access and scoring remain unavailable until population and freshness requirements are satisfied.
+- Authentication, operator authorization and an operator audit trail are not implemented.
+- Investigation updates currently use last-write-wins semantics.
+- PostgreSQL integration and AWS deployment verification are pending.
+- There is no public production deployment or measured scalability claim.
 
-React components are reusable pieces of the screen. React Router chooses which
-page to show for a URL. Vite runs the local development server and builds the
-browser files. API integration is the shared code that asks FastAPI for data
-and handles its replies and failures.
+## Repository Structure
 
-## Requirements
-- Python 3.11+
-- Windows PowerShell, macOS, or Linux
-
-## Run locally (SQLite, no AWS required)
-
-From the repository root:
-
-```powershell
-cd backend
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m scripts.init_db
-python -m uvicorn app.main:app --reload
+```text
+backend/              FastAPI application, graph adapters, worker, scripts and tests
+frontend/             React application, API client, visualizations and tests
+ml_training/          Offline dataset preparation, historical features and training
+docs/                 API contracts, integration requirements and local setup
+artifacts/            Optional local model bundles (Git-ignored)
+data/                 Local datasets and generated outputs (Git-ignored)
+docker-compose.yml    Local FastAPI and Nginx services with persistent SQLite
+docker-compose.model.yml  Optional ML runtime and read-only artifact mount
 ```
 
-For Linux/macOS use `source .venv/bin/activate` instead of the PowerShell activation line.
+## Documentation
 
-Open http://127.0.0.1:8000/docs and test `GET /health`.
+- [Docker setup and troubleshooting](docs/docker-setup.md)
+- [Frontend development and interface behavior](frontend/README.md)
+- [Scoring API, unscored ingestion and UTC handling](docs/scoring-api.md)
+- [Inference inputs and saved preprocessing](docs/fraud-inference.md)
+- [Graph synchronization and recovery](docs/graph-sync.md)
+- [Neptune adapter and pending integration checks](docs/neptune-adapter.md)
+- [Graph Explorer API](docs/graph-explorer-api.md)
+- [Alert and investigation API](docs/alerts-api.md)
+- [Dashboard API](docs/dashboard-api.md)
+- [Dataset preparation](ml_training/README.md)
+- [Historical graph features](ml_training/GRAPH_FEATURES.md)
+- [Classifier training and evaluation](ml_training/CLASSIFIER.md)
 
-## Run tests
+## Roadmap
 
-From `backend/` with the virtual environment active:
-
-```powershell
-python -m pytest -v
-```
-
-The tests use temporary in-memory SQLite databases and don't connect to AWS.
-
-## Switch to PostgreSQL later
-
-Create `backend/.env` with:
-
-```env
-DATABASE_URL=postgresql+psycopg://riskgraph:yourpassword@localhost:5432/riskgraph
-APP_NAME=RiskGraph API
-```
-
-Ensure PostgreSQL is running and the `riskgraph` database and user exist; then rerun `python -m scripts.init_db`. For production, replace `create_all` with database migrations (Alembic). Never commit `.env` to Git.
-
-## Design notes
-
-- `api/` holds HTTP endpoints; `models/` holds SQLAlchemy entities; `core/` holds configuration and database wiring.
-- The `/health` endpoint checks SQL connectivity, not Neptune or model availability. It is a *basic database readiness check*, not a complete production health strategy.
-- Status fields are strings in this milestone. Later steps will enforce transitions in service logic and validate input with Pydantic schemas.
-- Database schema and SQL initialization are for local learning; future migrations will handle schema evolution.
-- This is a prototype using only test, simulated, or pseudonymized data; do not store real payment card numbers.
-
-## Step 2 — Transaction APIs
-
-No schema migration is necessary when upgrading from Step 1. The transaction and idempotency tables already exist.
-
-Start from `backend/`:
-
-```powershell
-python -m pip install -r requirements.txt
-python -m scripts.init_db
-python -m uvicorn app.main:app --reload
-```
-
-Open http://127.0.0.1:8000/docs and try:
-
-- `POST /api/v1/transactions` to create a transaction.
-- `GET /api/v1/transactions` to list transactions (`limit=20`, `offset=0`).
-- `GET /api/v1/transactions/{transaction_id}` to fetch a transaction.
-
-Example payload:
-
-```json
-{
-  "transaction_id": "TXN1045",
-  "amount": "15000.50",
-  "currency": "INR",
-  "card_token": "TOKEN_CARD_22",
-  "device_token": "TOKEN_DEVICE_11",
-  "event_time": "2026-10-10T10:30:00Z"
-}
-```
-
-You may optionally send header `Idempotency-Key: retry-123`. First creation returns HTTP 201; the same request with the same key returns HTTP 200 and the same record. A different payload with the same key returns HTTP 409. Duplicate transaction IDs also return 409. Validation errors return 422; missing transaction IDs return 404.
-
-Run tests:
-
-```powershell
-python -m pytest -v
-```
-
-**Learning note:** Legacy transaction creation leaves `risk_score` and `risk_level`
-null; scoring uses its separate endpoint and readiness checks. The statuses
-`RECEIVED` and `PENDING` do not mean a background worker has already been started.
-These endpoints use demo-only tokenized identifiers and must not be deployed
-publicly without authentication and access restrictions.
-
-## UTC timestamps
-
-Transaction timestamps must include an offset (such as `+05:30`) or `Z` for UTC.
-The API converts accepted timestamps to UTC before persistence and idempotency hashing.
-For example, `2026-10-10T10:30:00+05:30` is returned as `2026-10-10T05:00:00Z`.
-
-All six model timestamp columns use the reusable `UTCDateTime` SQLAlchemy type.
-SQLite stores UTC clock values in its existing `DATETIME` format without an offset;
-the type restores UTC timezone information when reading. PostgreSQL uses
-`TIMESTAMP WITH TIME ZONE`, and returned values are converted to UTC regardless
-of the database session timezone. System defaults use `datetime.now(timezone.utc)`.
-
-No schema migration or data rewrite is required. Existing naive timestamp values
-are assumed to represent UTC and are read with UTC attached. An offset discarded
-by older code cannot be recovered automatically. Previously saved idempotency
-hashes are not rewritten; an old hash based on a non-UTC timestamp representation
-may conflict on retry after normalization. The local database was inspected and
-contained no rows at the time of this change.
-
-## Local graph abstraction
-
-`app/graph/repository.py` defines the synchronous `GraphRepository` Protocol.
-`InMemoryGraphRepository` is a local implementation for learning and tests; it
-is not wired into the transaction API and does not connect to AWS. A future
-Neptune adapter can implement the same three methods without changing callers.
-
-Pass a `TransactionNode` containing the transaction ID, Decimal amount, currency,
-aware event time, pseudonymous card token, and optional device token. Never pass
-raw card numbers. The graph contains directed `USES_CARD` and `USES_DEVICE`
-relationships from transactions to token nodes. Repeated upserts replace the
-transaction by ID and keep edges unique; changed tokens replace old edges.
-
-`get_transaction_network(id, limit=50)` follows edges in both directions using
-breadth-first traversal, including indirect connections. The positive integer
-limit counts all returned nodes, including the root. Results are deterministic,
-contain only edges whose endpoints are returned, and are empty for unknown IDs.
-This investigation view has no historical time filter and must not be used as
-input to historical feature calculation.
-
-`get_historical_features(card_token, device_token, event_time)` uses elapsed UTC
-windows `[event_time - window, event_time)`: lower bounds are inclusive; exact-time
-and future events are excluded. It returns card/device transaction counts for
-24 hours, distinct card/device associations for 7 days, and the card's 7-day
-average amount using Decimal without rounding to cents. Absent devices are not
-counted as unique devices. Missing histories return zero; an absent device gives
-zero device features. Mixed currencies in a card's 7-day history raise ValueError
-because no currency conversion or currency parameter is available. Graph input
-contains no fraud labels or model predictions.
-
-The in-memory adapter scans local data and loses it on restart. It is intended
-for small datasets and serialized use, not concurrent writers or production
-storage. No database schema changes or additional dependencies are required.
-
-## Neptune adapter (offline milestone)
-
-`NeptuneGraphRepository` now implements the same contract using a small HTTPS
-client. It is not activated by the API. No AWS resources, credentials, or network
-access are needed for the tests. See [the Neptune adapter guide](docs/neptune-adapter.md)
-for request encoding, explicit construction, optional IAM dependency, and the
-integration checks that still require a real Neptune Database.
-
-## Transactional graph outbox
-
-Transaction creation now commits one `GraphSyncJob` with the transaction and its
-optional idempotency record. Graph writes run separately through an explicitly
-started worker. Existing API field names and endpoints are preserved.
-
-For an existing database, stop the API/workers, make a database backup, and run
-`python -m scripts.migrate_graph_sync_leases` from `backend/`. Fresh installations
-using `python -m scripts.init_db` already include the new nullable lease column.
-
-See [the graph sync guide](docs/graph-sync.md) for worker commands, retry policy,
-lease recovery, manual retries, and important in-memory/production limitations.
+- Verify real AWS Neptune queries, graph population and PostgreSQL integration.
+- Add S3 artifact storage and CloudWatch observability.
+- Add GitHub Actions CI for the existing test suites and builds.
+- Complete end-to-end deployment verification and access controls before public use.

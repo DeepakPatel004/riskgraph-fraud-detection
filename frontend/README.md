@@ -24,11 +24,34 @@ npm run dev
 Open http://127.0.0.1:5173. From `frontend/`, run `npm test` and `npm run build`.
 Tests use Node's built-in runner with small synthetic fixtures, not AWS or large
 datasets. From `backend/`, run `.\.venv\Scripts\python.exe -m pytest -q`.
-See the [project README](../README.md) for environment variables and proxy setup.
+See [development configuration](#development-configuration) below for environment variables and proxy setup.
 Phase 6.2 added Recharts 3.10.1; Phase 6.3 adds only Cytoscape.js 3.34.3.
 Dashboard and Graph Explorer routes load on demand, keeping their visualization
 libraries out of the initial transaction bundle.
 Chart containers follow [Recharts' responsive sizing guidance](https://recharts.github.io/en-US/api/ResponsiveContainer/).
+
+## Development configuration
+
+Optionally copy `.env.example` to `.env.local` inside `frontend/`.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | `/backend` | Public browser API base URL |
+| `VITE_API_TIMEOUT_MS` | `8000` | Request timeout in milliseconds, from 1 to 60000 |
+| `DEV_API_TARGET` | `http://127.0.0.1:8000` | Server-side Vite development proxy target |
+
+Vite forwards `/backend/health` and `/backend/api/v1/...` to FastAPI after
+removing `/backend`. Development uses port 5173; `npm run preview` uses 4173
+with the same local-only proxy. Restart Vite after changing settings.
+`VITE_` values are public browser configuration and must never contain secrets.
+An absolute API URL requires an appropriate backend CORS configuration.
+
+The shared header checks `/health` once and on explicit refresh. Connected means
+SQL and FastAPI are reachable, not that the model or Neptune is ready. If the
+badge shows disconnected, check the API process and proxy target. For occupied
+ports, stop the conflicting development process or use `npm run dev -- --port 5174`.
+Static deployments need their own API reverse proxy and React route fallback;
+the provided Docker Nginx configuration supplies both for local execution.
 
 ## Overview data sources
 
